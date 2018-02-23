@@ -33,7 +33,9 @@ class future_queue {
       buffers[writeIndex] = std::move(t);
       mutexes[writeIndex].unlock();
       writeIndex = nextWriteIndex();
-      std::cout << "write " << writeIndex << std::endl;
+      // send notification if requested
+      auto notify = std::atomic_load(&notifyer);
+      if(notify) notify->unlock();
       return true;
     }
 
@@ -76,10 +78,8 @@ class future_queue {
 
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
-      std::cout << "read A " << readIndex << std::endl;
       mutexes[readIndex].lock();
       t = std::move(buffers[readIndex]);
-      std::cout << "read B " << readIndex << std::endl;
       readIndex = nextReadIndex();
     }
     

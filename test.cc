@@ -66,27 +66,26 @@ int main() {
     while(true) {
       int k;
       // wait until any of the two queues has new data
-      wait_any(a, b);
+      auto id = wait_any(a, b);
       std::cout << "any " << std::endl;
       // we don't know which one has the data, so check them both
-      bool hadData = false;
-      if(a.has_data()) {
+      if(a.get_id() == id) {
         // pop element from queue and print it
         //a.pop_wait(k);
         bool t = a.pop(k);
         assert(t);  // read_available() told us so
         std::cout << "A " << k << std::endl;
-        hadData = true;
       }
-      if(b.has_data()) {
+      else if(b.get_id() == id) {
         // pop element from queue and print it
         //b.pop_wait(k);
         bool t = b.pop(k);
         assert(t);  // read_available() told us so
         std::cout << "B " << k << std::endl;
-        hadData = true;
       }
-      assert(hadData);        // no guarantee!
+      else {
+        assert(false);
+      }
     }
     terminate = true;
     

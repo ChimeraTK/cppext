@@ -7,8 +7,16 @@
 #include <unistd.h>
 
 
+// Simple base class which does not depend on the template argument
+class future_queue_base {
+};
+
+// A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
+// is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
+// allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
+// function wait_any() to wait until any of the given future_queues is not empty.
 template<typename T>
-class future_queue {
+class future_queue : public future_queue_base {
 
   public:
   
@@ -22,6 +30,8 @@ class future_queue {
       // buffer 0 will be the first buffer to use
       readIndex = 0;
       writeIndex = 0;
+
+      hasFrontOwnership = false;
       
       // initially lock all mutexes
       for(size_t i=0; i<nBuffers; ++i) mutexes[i].lock();
@@ -41,7 +51,9 @@ class future_queue {
 
     // Push object t to the queue. If the queue is full, the last element will be overwritten and false will be
     // returned. If no data had to be overwritten, true is returned.
+    // When using this function the queue must have a length of at least 2.
     bool push_overwrite(T&& t) {
+      assert(nBuffers-1 > 1);
       bool ret = true;
       if(write_available() == 0) {
         if(mutexes[previousWriteIndex()].try_lock()) {
@@ -65,10 +77,10 @@ class future_queue {
 
     // Pop object off the queue and store it in t. If no data is available, false is returned
     bool pop(T& t) {
-      if(read_available() == 0) return false;
-      if(mutexes[readIndex].try_lock()) {
+      if(hasFrontOwnership || mutexes[readIndex].try_lock()) {
         t = std::move(buffers[readIndex]);
         readIndex = nextReadIndex();
+        hasFrontOwnership = false;
         return true;
       }
       else {
@@ -78,13 +90,25 @@ class future_queue {
 
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
-      mutexes[readIndex].lock();
+      if(!hasFrontOwnership) {
+        mutexes[readIndex].lock();
+      }
+      else {
+        hasFrontOwnership = false;
+      }
       t = std::move(buffers[readIndex]);
       readIndex = nextReadIndex();
     }
     
+    // Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
+    // in the queue by calling has_data() before calling this function.
+    const T& front() const {
+      assert(hasFrontOwnership);
+      return buffers[readIndex];
+    }
+    
     // number of push operations which can be performed before the queue is full
-    size_t write_available() {
+    size_t write_available() const {
       size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
       size_t l_readIndex = readIndex;
       // one buffer is always kept free so the receiver can always wait on a mutex
@@ -96,7 +120,9 @@ class future_queue {
       }
     }
 
-    // number of pop operations which can be performed before the queue is empty
+    // Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
+    // in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
+    // accessing it through pop() or front(), use has_data().
     size_t read_available() {
       size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
       size_t l_readIndex = readIndex;
@@ -106,6 +132,16 @@ class future_queue {
       else {
         return nBuffers + l_writeIndex - l_readIndex;
       }
+    }
+    
+    // Check for the presence of readable data in the queue.
+    bool has_data() {
+      if(hasFrontOwnership) return true;
+      if(mutexes[readIndex].try_lock()) {
+        hasFrontOwnership = true;
+        return true;
+      }
+      return false;
     }
     
   protected:
@@ -136,6 +172,9 @@ class future_queue {
     
     // index of the element which will be next read
     std::atomic<size_t> readIndex;
+    
+    // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
+    bool hasFrontOwnership;
     
     // return the next write index (without changing the member) - no checking if free buffers are available is done!
     size_t nextWriteIndex() {
@@ -214,7 +253,7 @@ template<class FirstQueueType, class... FutureQueueTypes>
 bool wait_any_helper_check_for_data(FirstQueueType &first, FutureQueueTypes&... queues) {
 
     // check for data in first queue
-    if(first.read_available() > 0) return true;
+    if(first.has_data()) return true;
 
     // Recursively call ourself to process the remaining queues. If the list is empty the overloaded function gets
     // called.

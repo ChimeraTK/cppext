@@ -40,8 +40,8 @@ int main() {
         // increment counter and push its value to the queue - potentially overwriting the last value if the queue is
         // full
         int val = ++counter;
-        a.push_overwrite( std::move(val) );
-//        a.push( std::move(val) );
+//        a.push_overwrite( std::move(val) );
+        a.push( std::move(val) );
       }
       
     }).detach();
@@ -54,8 +54,8 @@ int main() {
         // increment counter and push its value to the queue - potentially overwriting the last value if the queue is
         // full
         int val = ++counter;
-        b.push_overwrite( std::move(val) );
-//        b.push( std::move(val) );
+//        b.push_overwrite( std::move(val) );
+        b.push( std::move(val) );
       }
       
     }).detach();
@@ -66,23 +66,27 @@ int main() {
     while(true) {
       int k;
       // wait until any of the two queues has new data
-      //wait_any(a, b);
-      //std::cout << "any " << std::endl;
+      wait_any(a, b);
+      std::cout << "any " << std::endl;
       // we don't know which one has the data, so check them both
-//      if(a.read_available() > 0) {
+      bool hadData = false;
+      if(a.has_data()) {
         // pop element from queue and print it
+        //a.pop_wait(k);
         bool t = a.pop(k);
-//        a.pop_wait(k);
-//        assert(t);  // read_available() told us so
-        if(t) std::cout << "A " << k << std::endl;
-//      }
-//      if(b.read_available() > 0) {
+        assert(t);  // read_available() told us so
+        std::cout << "A " << k << std::endl;
+        hadData = true;
+      }
+      if(b.has_data()) {
         // pop element from queue and print it
-//        b.pop_wait(k);
-        t = b.pop(k);
-//        assert(t);  // read_available() told us so
-        if(t) std::cout << "B " << k << std::endl;
-//      }
+        //b.pop_wait(k);
+        bool t = b.pop(k);
+        assert(t);  // read_available() told us so
+        std::cout << "B " << k << std::endl;
+        hadData = true;
+      }
+      //assert(hadData);        // no guarantee!
     }
     terminate = true;
     

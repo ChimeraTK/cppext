@@ -9,6 +9,131 @@
 
 // Simple base class which does not depend on the template argument
 class future_queue_base {
+
+  public:
+
+    future_queue_base(size_t length)
+    : id(get_next_id()),
+      nBuffers(length+1),
+      mutexes(length+1)
+    {
+      // buffer 0 will be the first buffer to use
+      readIndex = 0;
+      writeIndex = 0;
+
+      hasFrontOwnership = false;
+      
+      // initially lock all mutexes
+      for(size_t i=0; i<nBuffers; ++i) mutexes[i].lock();
+    }
+    
+    // number of push operations which can be performed before the queue is full
+    size_t write_available() const {
+      size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
+      size_t l_readIndex = readIndex;
+      // one buffer is always kept free so the receiver can always wait on a mutex
+      if(l_writeIndex < l_readIndex) {
+        return l_readIndex - l_writeIndex - 1;
+      }
+      else {
+        return nBuffers + l_readIndex - l_writeIndex - 1;
+      }
+    }
+
+    // Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
+    // in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
+    // accessing it through pop() or front(), use has_data().
+    size_t read_available() {
+      size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
+      size_t l_readIndex = readIndex;
+      if(l_readIndex <= l_writeIndex) {
+        return l_writeIndex - l_readIndex;
+      }
+      else {
+        return nBuffers + l_writeIndex - l_readIndex;
+      }
+    }
+    
+    // Check for the presence of readable data in the queue.
+    bool has_data() {
+      if(hasFrontOwnership) return true;
+      if(mutexes[readIndex].try_lock()) {
+        hasFrontOwnership = true;
+        return true;
+      }
+      return false;
+    }
+    
+    // Class for the process-unique id_t, to prevent exposing implementation details of the id_t to the public interface
+    class id_t {
+      public:
+        id_t(const id_t &other) : _id(other._id) {}
+        bool operator==(const id_t &rhs) const { return rhs._id == _id; }
+        bool operator!=(const id_t &rhs) const { return rhs._id != _id; }
+        bool operator<(const id_t &rhs) const { return rhs._id < _id; }
+        bool operator>(const id_t &rhs) const { return rhs._id > _id; }
+        bool operator<=(const id_t &rhs) const { return rhs._id <= _id; }
+        bool operator>=(const id_t &rhs) const { return rhs._id >= _id; }
+        id_t& operator=(const id_t &rhs) { _id = rhs._id; return *this; }
+        
+        static id_t nullid() { return {0}; }
+        
+      private:
+        id_t(size_t id) : _id(id) {}
+        size_t _id;
+        friend class future_queue_base;
+    };
+    
+    // return a process-unique id_t of this
+    const id_t& get_id() const {
+      return id;
+    }
+    
+  protected:
+    
+    // process-unique id_t of this queue
+    id_t id;
+    
+    // the number of buffers we have allocated
+    size_t nBuffers;
+
+    // vector of mutexes corresponding to the buffers - initial locking is done in the constructor, unlocking is handled
+    // by the push operations while re-locking is done by the pop operations.
+    std::vector<std::mutex> mutexes;
+    
+    // index of the element which will be next written
+    std::atomic<size_t> writeIndex;
+    
+    // index of the element which will be next read
+    std::atomic<size_t> readIndex;
+    
+    // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
+    bool hasFrontOwnership;
+    
+    // return the next write index (without changing the member) - no checking if free buffers are available is done!
+    size_t nextWriteIndex() {
+      return (writeIndex+1) % nBuffers;
+    }
+    
+    // return the previous write index (without changing the member) - no checking of anything is done!
+    size_t previousWriteIndex() {
+      return (writeIndex+nBuffers-1) % nBuffers;
+    }
+    
+    // return the next read index (without changing the member) - no checking if full buffers are available is done!
+    size_t nextReadIndex() {
+      return (readIndex+1) % nBuffers;
+    }
+    
+  private:
+    
+    // return next available process-unique id_t
+    static id_t get_next_id() {
+      static std::atomic<size_t> nextId{0};
+      nextId++;
+      return id_t(nextId);
+    }
+
 };
 
 // A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
@@ -23,19 +148,9 @@ class future_queue : public future_queue_base {
     // The length specifies how many objects the queue can contain at a time. Internally additional buffers will be
     // allocated. All buffers are allocated upon construction, so no dynamic memory allocation is required later.
     future_queue(size_t length)
-    : nBuffers(length+1),
-      buffers(length+1),
-      mutexes(length+1)
-    {
-      // buffer 0 will be the first buffer to use
-      readIndex = 0;
-      writeIndex = 0;
-
-      hasFrontOwnership = false;
-      
-      // initially lock all mutexes
-      for(size_t i=0; i<nBuffers; ++i) mutexes[i].lock();
-    }
+    : future_queue_base(length),
+      buffers(length+1)
+    {}
 
     // Push object t to the queue. Returns true if successful and false if queue is full.
     bool push(T&& t) {
@@ -107,43 +222,6 @@ class future_queue : public future_queue_base {
       return buffers[readIndex];
     }
     
-    // number of push operations which can be performed before the queue is full
-    size_t write_available() const {
-      size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
-      size_t l_readIndex = readIndex;
-      // one buffer is always kept free so the receiver can always wait on a mutex
-      if(l_writeIndex < l_readIndex) {
-        return l_readIndex - l_writeIndex - 1;
-      }
-      else {
-        return nBuffers + l_readIndex - l_writeIndex - 1;
-      }
-    }
-
-    // Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
-    // in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
-    // accessing it through pop() or front(), use has_data().
-    size_t read_available() {
-      size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
-      size_t l_readIndex = readIndex;
-      if(l_readIndex <= l_writeIndex) {
-        return l_writeIndex - l_readIndex;
-      }
-      else {
-        return nBuffers + l_writeIndex - l_readIndex;
-      }
-    }
-    
-    // Check for the presence of readable data in the queue.
-    bool has_data() {
-      if(hasFrontOwnership) return true;
-      if(mutexes[readIndex].try_lock()) {
-        hasFrontOwnership = true;
-        return true;
-      }
-      return false;
-    }
-    
   protected:
   
     // Pointer to notification mutex used to realise a wait_any logic. The mutex is provided in locked state by the
@@ -156,48 +234,18 @@ class future_queue : public future_queue_base {
                                                      FutureQueueTypes&... queues );
 
   private:
-    
-    // the number of buffers we have allocated
-    size_t nBuffers;
 
     // vector of buffers - allocation is done in the constructor
     std::vector<T> buffers;
 
-    // vector of mutexes corresponding to the buffers - initial locking is done in the constructor, unlocking is handled
-    // by the push operations while re-locking is done by the pop operations.
-    std::vector<std::mutex> mutexes;
-    
-    // index of the element which will be next written
-    std::atomic<size_t> writeIndex;
-    
-    // index of the element which will be next read
-    std::atomic<size_t> readIndex;
-    
-    // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
-    bool hasFrontOwnership;
-    
-    // return the next write index (without changing the member) - no checking if free buffers are available is done!
-    size_t nextWriteIndex() {
-      return (writeIndex+1) % nBuffers;
-    }
-    
-    // return the previous write index (without changing the member) - no checking of anything is done!
-    size_t previousWriteIndex() {
-      return (writeIndex+nBuffers-1) % nBuffers;
-    }
-    
-    // return the next read index (without changing the member) - no checking if full buffers are available is done!
-    size_t nextReadIndex() {
-      return (readIndex+1) % nBuffers;
-    }
-
 };
+
+
 
 template<class FirstQueueType, class... FutureQueueTypes>
 void wait_any_helper(std::shared_ptr<std::mutex> notifyer, FirstQueueType &first, FutureQueueTypes&... queues);
 
 // wait until any of the specified future_queue instances has new data
-// FIXME this is not yet properly working!!!
 template<class... FutureQueueTypes>
 void wait_any(FutureQueueTypes&... queues) {
 
@@ -209,12 +257,13 @@ void wait_any(FutureQueueTypes&... queues) {
     // helper
     wait_any_helper_distribute_notifier(notifyer, queues...);
     
-    // Check if data is present in any of the queues
-    bool hasData = wait_any_helper_check_for_data(queues...);
-    
-    // If no data yet present, try to obtain the lock on the mutex. Since we have locked it before, this will block
-    // until one of the queues unlocks it
-    if(!hasData) notifyer->lock();
+    // Check if data is present in any of the queues. This check is repeated in a loop since spurious wakeups can occur.
+    while(!wait_any_helper_check_for_data(queues...)) {
+      // If no data yet present, try to obtain the lock on the mutex. Since we have locked it before, this will block
+      // until one of the queues unlocks it
+      notifyer->lock();
+      // Note: suprious wakeups might occur due to race conditions in case push_overwrite() 
+    }
     
     // Distribute a nullptr to all queues so they no longer try to notify (wouldn't be a big problem but might hurt
     // performance)

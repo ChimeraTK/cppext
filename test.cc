@@ -86,7 +86,7 @@ int main() {
         std::cout << "B " << k << std::endl;
         hadData = true;
       }
-      //assert(hadData);        // no guarantee!
+      assert(hadData);        // no guarantee!
     }
     terminate = true;
     

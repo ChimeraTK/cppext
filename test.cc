@@ -40,8 +40,8 @@ int main() {
         // increment counter and push its value to the queue - potentially overwriting the last value if the queue is
         // full
         int val = ++counter;
-//        a.push_overwrite( std::move(val) );
-        a.push( std::move(val) );
+        a.push_overwrite( std::move(val) );
+//        a.push( std::move(val) );
       }
       
     }).detach();
@@ -54,8 +54,8 @@ int main() {
         // increment counter and push its value to the queue - potentially overwriting the last value if the queue is
         // full
         int val = ++counter;
-//        b.push_overwrite( std::move(val) );
-        b.push( std::move(val) );
+        b.push_overwrite( std::move(val) );
+//        b.push( std::move(val) );
       }
       
     }).detach();
@@ -73,14 +73,14 @@ int main() {
         // pop element from queue and print it
         //a.pop_wait(k);
         bool t = a.pop(k);
-        assert(t);  // read_available() told us so
+        assert(t);  // wait_any() told us so
         std::cout << "A " << k << std::endl;
       }
       else if(b.get_id() == id) {
         // pop element from queue and print it
         //b.pop_wait(k);
         bool t = b.pop(k);
-        assert(t);  // read_available() told us so
+        assert(t);  // wait_any() told us so
         std::cout << "B " << k << std::endl;
       }
       else {

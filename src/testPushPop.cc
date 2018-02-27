@@ -1,18 +1,20 @@
-#define BOOST_TEST_MODULE testPushPop
+#define BOOST_TEST_MODULE test_future_queue
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
 #include "future_queue.h"
 
-BOOST_AUTO_TEST_SUITE(PushPopTestSuite)
+BOOST_AUTO_TEST_SUITE(testPushPop)
 
 #define BOOST_CHECK_TIMEOUT(condition)                                                                                  \
-  bool isOk = false;                                                                                                    \
-  for(size_t i=0; i<1000; ++i) {                                                                                        \
-    if(condition) { isOk = true; break; }                                                                               \
-    usleep(10000);                                                                                                      \
-  }                                                                                                                     \
-  if(!isOk) BOOST_ERROR("Check with timeout on condition failed: " #condition)
+  {                                                                                                                     \
+    bool isOk = false;                                                                                                  \
+    for(size_t i=0; i<1000; ++i) {                                                                                      \
+      if(condition) { isOk = true; break; }                                                                             \
+      usleep(10000);                                                                                                    \
+    }                                                                                                                   \
+    if(!isOk) BOOST_ERROR("Check with timeout on condition failed: " #condition);                                       \
+  }
 
 
 // test with a custom data type which is not known to the queue

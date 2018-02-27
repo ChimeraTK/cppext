@@ -1,10 +1,10 @@
-#define BOOST_TEST_MODULE testReadWriteAvailable
+#define BOOST_TEST_MODULE test_future_queue
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
 #include "future_queue.h"
 
-BOOST_AUTO_TEST_SUITE(ReadWriteAvailableTestSuite)
+BOOST_AUTO_TEST_SUITE(testReadWriteAvailable)
 
 /*********************************************************************************************************************/
 

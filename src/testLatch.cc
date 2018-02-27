@@ -1,4 +1,4 @@
-#define BOOST_TEST_MODULE testLatch
+#define BOOST_TEST_MODULE test_latch
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
@@ -6,7 +6,7 @@ using namespace boost::unit_test_framework;
 
 #include <thread>
 
-BOOST_AUTO_TEST_SUITE(LatchTestSuite)
+BOOST_AUTO_TEST_SUITE(TestLatch)
 
 #define BOOST_CHECK_TIMEOUT(condition)                                                                                  \
   bool isOk = false;                                                                                                    \

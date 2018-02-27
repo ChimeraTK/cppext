@@ -146,19 +146,7 @@ class future_queue_base {
     // Pointer to notification latch used to realise a wait_any logic.
     std::shared_ptr<latch> notifyer;
 
-    template<class... FutureQueueTypes>
-    friend future_queue_base::id_t wait_any(FutureQueueTypes&... queues);
-
-    template<class... FutureQueueTypes>
-    friend future_queue_base::id_t wait_any_helper_check_for_data(FutureQueueTypes&... queues);
-
-    template<class FirstQueueType, class... FutureQueueTypes>
-    friend void wait_any_helper_distribute_notifier( std::shared_ptr<latch> &notifyer, FirstQueueType &first,
-                                                     FutureQueueTypes&... queues );
-
-    template<class FirstQueueType, class... FutureQueueTypes>
-    friend void wait_any_helper_check_for_data( future_queue_base::id_t &id, size_t &updateId, FirstQueueType &first,
-                                                FutureQueueTypes&... queues);
+    friend future_queue_base::id_t wait_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
 
   private:
 
@@ -228,6 +216,12 @@ class future_queue : public future_queue_base {
       }
     }
 
+    // Pop object off the queue and discard it. If no data is available, false is returned
+    bool pop() {
+      T t;
+      return pop(t);
+    }
+
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
       if(!hasFrontOwnership) {
@@ -238,6 +232,12 @@ class future_queue : public future_queue_base {
       }
       t = std::move(buffers[readIndex]);
       readIndex = nextReadIndex();
+    }
+
+    // Pop object off the queue and discard it. This function will block until data is available.
+    void pop_wait() {
+      T t;
+      pop_wait(t);
     }
 
     // Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
@@ -268,19 +268,33 @@ class future_queue : public future_queue_base {
 
 
 // wait until any of the specified future_queue instances has new data
-template<class... FutureQueueTypes>
-future_queue_base::id_t wait_any(FutureQueueTypes&... queues) {
+future_queue_base::id_t wait_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
 
     // Create a latch in a shared pointer, so we can hand it on to the queues
     std::shared_ptr<latch> notifyer = std::make_shared<latch>();
 
     // Distribute the pointer to the latch to all queues - since we have variadic arguments we need to call a recursive
     // helper
-    wait_any_helper_distribute_notifier(notifyer, queues...);
+    for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyer), notifyer);
 
     // Check if data is present in any of the queues. This check is repeated in a loop since spurious wakeups can occur.
     future_queue_base::id_t id(future_queue_base::id_t::nullid());
-    while( (id = wait_any_helper_check_for_data(queues...)) == future_queue_base::id_t::nullid() ) {
+    size_t updateId = future_queue_base::get_max_update_id();
+    while(true) {
+
+      // search for data and store the id of the first update (if multiple updates present)
+      for(auto &queue : listOfQueues) {
+        if(queue.get().has_data()) {
+          if(queue.get().get_update_id() < updateId) {
+            updateId = queue.get().get_update_id();
+            id = queue.get().get_id();
+          }
+        }
+      }
+
+      // if data has been found, terminate loop
+      if(id != future_queue_base::id_t::nullid()) break;
+
       // If no data yet present, wait on the latch. Since we have locked it before, this will block
       // until one of the queues unlocks it
       notifyer->wait();
@@ -290,65 +304,8 @@ future_queue_base::id_t wait_any(FutureQueueTypes&... queues) {
     // Distribute a nullptr to all queues so they no longer try to notify (wouldn't be a big problem but might hurt
     // performance)
     notifyer = std::shared_ptr<latch>(nullptr);
-    wait_any_helper_distribute_notifier(notifyer, queues...);
+    for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyer), notifyer);
 
     // return the id of the queue which has the oldest update (determined in wait_any_helper_check_for_data())
     return id;
 }
-
-
-// Helper for wait_any, used for dealing with the variadic argument list. This function is called after the last queue
-// has been processed.
-void wait_any_helper_distribute_notifier(std::shared_ptr<latch>&) {}
-
-// Helper for wait_any, used for dealing with the variadic argument list. This function recursively calls itself and
-// processes one item from the variadic list at a time.
-template<class FirstQueueType, class... FutureQueueTypes>
-void wait_any_helper_distribute_notifier( std::shared_ptr<latch> &notifyer, FirstQueueType &first,
-                                          FutureQueueTypes&... queues ) {
-
-    // store the notifyer latch to the queue
-    std::atomic_store(&first.notifyer, notifyer);
-
-    // Recursively call ourself to process the remaining queues. If the list is empty the overloaded function gets
-    // called.
-    wait_any_helper_distribute_notifier(notifyer, queues...);
-
-}
-
-
-// Helper for wait_any, used for dealing with the variadic argument list. This function is called after the last queue
-// has been processed.
-void wait_any_helper_check_for_data(future_queue_base::id_t&, size_t&) {
-    return;
-}
-
-// Helper for wait_any, ...
-template<class FirstQueueType, class... FutureQueueTypes>
-void wait_any_helper_check_for_data(future_queue_base::id_t &id, size_t &updateId, FirstQueueType &first, FutureQueueTypes&... queues) {
-
-    // Check for data in first queue. If data is present, check if data is older than previously found data - i.e. this
-    // update should be returned first.
-    if(first.has_data()) {
-      if(first.get_update_id() < updateId) {
-        updateId = first.get_update_id();
-        id = first.get_id();
-      }
-    }
-
-    // Recursively call ourself to process the remaining queues. If the list is empty the overloaded function gets
-    // called.
-    wait_any_helper_check_for_data(id, updateId, queues...);
-
-}
-
-
-// Helper for wait_any, ...
-template<class... FutureQueueTypes>
-future_queue_base::id_t wait_any_helper_check_for_data(FutureQueueTypes&... queues) {
-    future_queue_base::id_t id(future_queue_base::id_t::nullid());
-    size_t updateId = future_queue_base::get_max_update_id();
-    wait_any_helper_check_for_data(id, updateId, queues...);
-    return id;
-}
-

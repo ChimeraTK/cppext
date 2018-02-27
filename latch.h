@@ -10,7 +10,7 @@ class latch {
     void count_down() {
       std::unique_lock<decltype(_mutex)> lock(_mutex);
       if(_count > 0) --_count;
-      _condition.notify_one();
+      if(_count == 0) _condition.notify_one();
     }
 
     void wait() {
@@ -36,11 +36,6 @@ class latch {
         return true;
       }
       return false;
-    }
-
-    void reset(size_t count=1) {
-      std::unique_lock<decltype(_mutex)> lock(_mutex);
-      _count = count;
     }
 
   private:

@@ -1,11 +1,11 @@
 #include <thread>
-#include <mutex>
 #include <iostream>
 #include <atomic>
 #include <vector>
 #include <assert.h>
 #include <unistd.h>
 
+#include "latch.h"
 
 // Base class for future_queue which does not depend on the template argument. For a description see future_queue.
 class future_queue_base {
@@ -15,7 +15,7 @@ class future_queue_base {
     future_queue_base(size_t length)
     : id(get_next_id()),
       nBuffers(length+1),
-      mutexes(length+1),
+      latches(length+1),
       updateIds(length+1)
     {
       // buffer 0 will be the first buffer to use
@@ -23,16 +23,13 @@ class future_queue_base {
       writeIndex = 0;
 
       hasFrontOwnership = false;
-      
-      // initially lock all mutexes
-      for(size_t i=0; i<nBuffers; ++i) mutexes[i].lock();
     }
-    
+
     // number of push operations which can be performed before the queue is full
     size_t write_available() const {
       size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
       size_t l_readIndex = readIndex;
-      // one buffer is always kept free so the receiver can always wait on a mutex
+      // one buffer is always kept free so the receiver can always wait on a latch
       if(l_writeIndex < l_readIndex) {
         return l_readIndex - l_writeIndex - 1;
       }
@@ -54,17 +51,17 @@ class future_queue_base {
         return nBuffers + l_writeIndex - l_readIndex;
       }
     }
-    
+
     // Check for the presence of readable data in the queue.
     bool has_data() {
       if(hasFrontOwnership) return true;
-      if(mutexes[readIndex].try_lock()) {
+      if(latches[readIndex].is_ready_and_reset()) {
         hasFrontOwnership = true;
         return true;
       }
       return false;
     }
-    
+
     // Class for the process-unique id_t, to prevent exposing implementation details of the id_t to the public interface
     class id_t {
       public:
@@ -76,82 +73,79 @@ class future_queue_base {
         bool operator<=(const id_t &rhs) const { return rhs._id <= _id; }
         bool operator>=(const id_t &rhs) const { return rhs._id >= _id; }
         id_t& operator=(const id_t &rhs) { _id = rhs._id; return *this; }
-        
+
         static id_t nullid() { return {0}; }
-        
+
       private:
         id_t(size_t id) : _id(id) {}
         size_t _id;
         friend class future_queue_base;
     };
-    
+
     // return a process-unique id_t of this
     const id_t& get_id() const {
       return id;
     }
-    
+
   protected:
-    
+
     // process-unique id_t of this queue
     id_t id;
-    
+
     // the number of buffers we have allocated
     size_t nBuffers;
 
-    // vector of mutexes corresponding to the buffers - initial locking is done in the constructor, unlocking is handled
-    // by the push operations while re-locking is done by the pop operations.
-    std::vector<std::mutex> mutexes;
-    
+    // vector of latches corresponding to the buffers which allows the receiver to wait for new data
+    std::vector<latch> latches;
+
     // vector of update ids corresponding to the buffers
     std::vector<size_t> updateIds;
-    
+
     // index of the element which will be next written
     std::atomic<size_t> writeIndex;
-    
+
     // index of the element which will be next read
     std::atomic<size_t> readIndex;
-    
+
     // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
     bool hasFrontOwnership;
-    
+
     // return the next write index (without changing the member) - no checking if free buffers are available is done!
     size_t nextWriteIndex() {
       return (writeIndex+1) % nBuffers;
     }
-    
+
     // return the previous write index (without changing the member) - no checking of anything is done!
     size_t previousWriteIndex() {
       return (writeIndex+nBuffers-1) % nBuffers;
     }
-    
+
     // return the next read index (without changing the member) - no checking if full buffers are available is done!
     size_t nextReadIndex() {
       return (readIndex+1) % nBuffers;
     }
-    
+
     // return next available update id (used in wait_any to determine the order)
     static size_t get_next_update_id() {
       static std::atomic<size_t> updateId{0};
       ++updateId;
       return updateId;
     }
-    
+
     static size_t get_max_update_id() {
       return std::numeric_limits<size_t>::max();
     }
-    
+
     // Only allowed to call after has_data() has returned true!
     size_t get_update_id() const {
       return updateIds[readIndex];
     }
-        
+
   protected:
-  
-    // Pointer to notification mutex used to realise a wait_any logic. The mutex is provided in locked state by the
-    // receiver side and will be unlocked by the sender side if present during a push operation.
-    // Important note: Always use the proper atomic functions to access this pointer!
-    std::shared_ptr<std::mutex> notifyer;
-    
+
+    // Pointer to notification latch used to realise a wait_any logic.
+    std::shared_ptr<latch> notifyer;
+
     template<class... FutureQueueTypes>
     friend future_queue_base::id_t wait_any(FutureQueueTypes&... queues);
 
@@ -159,7 +153,7 @@ class future_queue_base {
     friend future_queue_base::id_t wait_any_helper_check_for_data(FutureQueueTypes&... queues);
 
     template<class FirstQueueType, class... FutureQueueTypes>
-    friend void wait_any_helper_distribute_notifier( std::shared_ptr<std::mutex> notifyer, FirstQueueType &first,
+    friend void wait_any_helper_distribute_notifier( std::shared_ptr<latch> &notifyer, FirstQueueType &first,
                                                      FutureQueueTypes&... queues );
 
     template<class FirstQueueType, class... FutureQueueTypes>
@@ -167,7 +161,7 @@ class future_queue_base {
                                                 FutureQueueTypes&... queues);
 
   private:
-    
+
     // return next available process-unique id_t
     static id_t get_next_id() {
       static std::atomic<size_t> nextId{0};
@@ -185,7 +179,7 @@ template<typename T>
 class future_queue : public future_queue_base {
 
   public:
-  
+
     // The length specifies how many objects the queue can contain at a time. Internally additional buffers will be
     // allocated. All buffers are allocated upon construction, so no dynamic memory allocation is required later.
     future_queue(size_t length)
@@ -207,13 +201,13 @@ class future_queue : public future_queue_base {
       assert(nBuffers-1 > 1);
       bool ret = true;
       if(write_available() == 0) {
-        if(mutexes[previousWriteIndex()].try_lock()) {
+        if(latches[previousWriteIndex()].is_ready_and_reset()) {
           writeIndex = previousWriteIndex();
           ret = false;
         }
         else {
-          // if we cannot obtain mutex for the last written buffer it means the buffer has been read already. In this
-          // case we should now have buffers available for writing.
+          // if the latch for the last written buffer is no longer readym it means the buffer has been read already. In
+          // this case we should now have buffers available for writing.
           assert(write_available() > 0);
         }
       }
@@ -223,7 +217,7 @@ class future_queue : public future_queue_base {
 
     // Pop object off the queue and store it in t. If no data is available, false is returned
     bool pop(T& t) {
-      if(hasFrontOwnership || mutexes[readIndex].try_lock()) {
+      if(hasFrontOwnership || latches[readIndex].is_ready_and_reset()) {
         t = std::move(buffers[readIndex]);
         readIndex = nextReadIndex();
         hasFrontOwnership = false;
@@ -237,7 +231,7 @@ class future_queue : public future_queue_base {
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
       if(!hasFrontOwnership) {
-        mutexes[readIndex].lock();
+        latches[readIndex].wait_and_reset();
       }
       else {
         hasFrontOwnership = false;
@@ -245,7 +239,7 @@ class future_queue : public future_queue_base {
       t = std::move(buffers[readIndex]);
       readIndex = nextReadIndex();
     }
-    
+
     // Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
     // in the queue by calling has_data() before calling this function.
     const T& front() const {
@@ -254,16 +248,16 @@ class future_queue : public future_queue_base {
     }
 
   private:
-  
+
     // called from push() and push_overwrite() - to avoid code duplication
     void push_internal(T&& t) {
       buffers[writeIndex] = std::move(t);
       updateIds[writeIndex] = get_next_update_id();
-      mutexes[writeIndex].unlock();
+      latches[writeIndex].count_down();
       writeIndex = nextWriteIndex();
       // send notification if requested
       auto notify = std::atomic_load(&notifyer);
-      if(notify) notify->unlock();
+      if(notify) notify->count_down();
     }
 
     // vector of buffers - allocation is done in the constructor
@@ -277,27 +271,27 @@ class future_queue : public future_queue_base {
 template<class... FutureQueueTypes>
 future_queue_base::id_t wait_any(FutureQueueTypes&... queues) {
 
-    // Create a locked mutex in a shared pointer, so we can hand it on to the queues
-    std::shared_ptr<std::mutex> notifyer = std::make_shared<std::mutex>();
-    notifyer->lock();
-    
-    // Distribute the pointer to the mutex to all queues - since we have variadic arguments we need to call a recursive
+    // Create a latch in a shared pointer, so we can hand it on to the queues
+    std::shared_ptr<latch> notifyer = std::make_shared<latch>();
+
+    // Distribute the pointer to the latch to all queues - since we have variadic arguments we need to call a recursive
     // helper
     wait_any_helper_distribute_notifier(notifyer, queues...);
-    
+
     // Check if data is present in any of the queues. This check is repeated in a loop since spurious wakeups can occur.
     future_queue_base::id_t id(future_queue_base::id_t::nullid());
     while( (id = wait_any_helper_check_for_data(queues...)) == future_queue_base::id_t::nullid() ) {
-      // If no data yet present, try to obtain the lock on the mutex. Since we have locked it before, this will block
+      // If no data yet present, wait on the latch. Since we have locked it before, this will block
       // until one of the queues unlocks it
-      notifyer->lock();
-      // Note: suprious wakeups might occur due to race conditions in case push_overwrite() 
+      notifyer->wait();
+      // Note: suprious wakeups might occur due to race conditions in case push_overwrite()
     }
-    
+
     // Distribute a nullptr to all queues so they no longer try to notify (wouldn't be a big problem but might hurt
     // performance)
-    wait_any_helper_distribute_notifier(std::shared_ptr<std::mutex>(nullptr), queues...);
-    
+    notifyer = std::shared_ptr<latch>(nullptr);
+    wait_any_helper_distribute_notifier(notifyer, queues...);
+
     // return the id of the queue which has the oldest update (determined in wait_any_helper_check_for_data())
     return id;
 }
@@ -305,15 +299,15 @@ future_queue_base::id_t wait_any(FutureQueueTypes&... queues) {
 
 // Helper for wait_any, used for dealing with the variadic argument list. This function is called after the last queue
 // has been processed.
-void wait_any_helper_distribute_notifier(std::shared_ptr<std::mutex> notifyer) {}
+void wait_any_helper_distribute_notifier(std::shared_ptr<latch>&) {}
 
 // Helper for wait_any, used for dealing with the variadic argument list. This function recursively calls itself and
 // processes one item from the variadic list at a time.
 template<class FirstQueueType, class... FutureQueueTypes>
-void wait_any_helper_distribute_notifier( std::shared_ptr<std::mutex> notifyer, FirstQueueType &first,
+void wait_any_helper_distribute_notifier( std::shared_ptr<latch> &notifyer, FirstQueueType &first,
                                           FutureQueueTypes&... queues ) {
 
-    // store the notifyer mutex to the queue
+    // store the notifyer latch to the queue
     std::atomic_store(&first.notifyer, notifyer);
 
     // Recursively call ourself to process the remaining queues. If the list is empty the overloaded function gets
@@ -325,7 +319,7 @@ void wait_any_helper_distribute_notifier( std::shared_ptr<std::mutex> notifyer, 
 
 // Helper for wait_any, used for dealing with the variadic argument list. This function is called after the last queue
 // has been processed.
-void wait_any_helper_check_for_data(future_queue_base::id_t &id, size_t &updateId) {
+void wait_any_helper_check_for_data(future_queue_base::id_t&, size_t&) {
     return;
 }
 

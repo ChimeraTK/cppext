@@ -20,6 +20,7 @@ foreach( testExecutableSrcFile ${testExecutables})
   #NAME_WE means the base name without path and (longest) extension
   get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
   add_executable(${excutableName} ${testExecutableSrcFile})
+  target_link_libraries(${excutableName} pthread)
   add_test(${excutableName} ${excutableName})
 endforeach( testExecutableSrcFile )
 

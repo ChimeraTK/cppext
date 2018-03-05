@@ -16,6 +16,7 @@ class future_queue_base {
     : id(get_next_id()),
       nBuffers(length+1),
       latches(length+1),
+      writeFlags(length+1),
       updateIds(length+1)
     {
       // buffer 0 will be the first buffer to use
@@ -26,6 +27,7 @@ class future_queue_base {
     }
 
     // number of push operations which can be performed before the queue is full
+    // Note: in a multi-producer context the result will be inaccurate!
     size_t write_available() const {
       size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
       size_t l_readIndex = readIndex;
@@ -41,6 +43,7 @@ class future_queue_base {
     // Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
     // in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
     // accessing it through pop() or front(), use has_data().
+    // Note: in a multi-producer context the result will be inaccurate!
     size_t read_available() {
       size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
       size_t l_readIndex = readIndex;
@@ -98,6 +101,9 @@ class future_queue_base {
     // vector of latches corresponding to the buffers which allows the receiver to wait for new data
     std::vector<latch> latches;
 
+    // vector of write-reserved flags
+    std::vector<std::atomic<size_t>> writeFlags;
+
     // vector of update ids corresponding to the buffers
     std::vector<size_t> updateIds;
 
@@ -109,6 +115,16 @@ class future_queue_base {
 
     // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
     bool hasFrontOwnership;
+
+    // return the next index
+    size_t nextIndex(size_t index) const {
+      return (index+1) % nBuffers;
+    }
+
+    // return the preious index
+    size_t previousIndex(size_t index) const {
+      return (index+nBuffers-1) % nBuffers;
+    }
 
     // return the next write index (without changing the member) - no checking if free buffers are available is done!
     size_t nextWriteIndex() {
@@ -141,7 +157,27 @@ class future_queue_base {
       return updateIds[readIndex];
     }
 
-  protected:
+    // reserve next available write slot. Returns false if no free slot is available or true on success.
+    bool obtain_write_slot(size_t &index) {
+      // last possble index for next write operation is just before the read index - one buffer must be kept free all times
+      size_t writeIndexMax = previousIndex(readIndex);
+      // try all queue slots until a free one is found
+      for(index = writeIndex; index != writeIndexMax; index = nextIndex(index)) {
+        auto flag = ++writeFlags[index];
+        if(flag == 1) {
+          // atomically move write index forward
+          while(true) {
+            size_t oldWriteIndex = writeIndex;
+            size_t newWriteIndex = nextIndex(oldWriteIndex);
+            bool done = writeIndex.compare_exchange_weak(oldWriteIndex,newWriteIndex);
+            if(done) break;
+          }
+          return true;
+        }
+        --writeFlags[index];
+      }
+      return false;
+    }
 
     // Pointer to notification latch used to realise a wait_any logic.
     std::shared_ptr<latch> notifyer;
@@ -177,14 +213,21 @@ class future_queue : public future_queue_base {
 
     // Push object t to the queue. Returns true if successful and false if queue is full.
     bool push(T&& t) {
-      if(write_available() == 0) return false;
-      push_internal(std::move(t));
+      size_t myIndex;
+      if(!obtain_write_slot(myIndex)) return false;
+      buffers[myIndex] = std::move(t);
+      updateIds[myIndex] = get_next_update_id();
+      latches[myIndex].count_down();
+      // send notification if requested
+      auto notify = std::atomic_load(&notifyer);
+      if(notify) notify->count_down();
       return true;
     }
 
     // Push object t to the queue. If the queue is full, the last element will be overwritten and false will be
     // returned. If no data had to be overwritten, true is returned.
     // When using this function the queue must have a length of at least 2.
+    // Note: when used in a multi-producer context the behaviour is undefined!
     bool push_overwrite(T&& t) {
       assert(nBuffers-1 > 1);
       bool ret = true;
@@ -199,7 +242,13 @@ class future_queue : public future_queue_base {
           assert(write_available() > 0);
         }
       }
-      push_internal(std::move(t));
+      buffers[writeIndex] = std::move(t);
+      updateIds[writeIndex] = get_next_update_id();
+      latches[writeIndex].count_down();
+      writeIndex = nextWriteIndex();
+      // send notification if requested
+      auto notify = std::atomic_load(&notifyer);
+      if(notify) notify->count_down();
       return ret;
     }
 
@@ -207,6 +256,7 @@ class future_queue : public future_queue_base {
     bool pop(T& t) {
       if(hasFrontOwnership || latches[readIndex].is_ready_and_reset()) {
         t = std::move(buffers[readIndex]);
+        writeFlags[readIndex] = 0;
         readIndex = nextReadIndex();
         hasFrontOwnership = false;
         return true;
@@ -231,6 +281,7 @@ class future_queue : public future_queue_base {
         hasFrontOwnership = false;
       }
       t = std::move(buffers[readIndex]);
+      writeFlags[readIndex] = 0;
       readIndex = nextReadIndex();
     }
 
@@ -248,17 +299,6 @@ class future_queue : public future_queue_base {
     }
 
   private:
-
-    // called from push() and push_overwrite() - to avoid code duplication
-    void push_internal(T&& t) {
-      buffers[writeIndex] = std::move(t);
-      updateIds[writeIndex] = get_next_update_id();
-      latches[writeIndex].count_down();
-      writeIndex = nextWriteIndex();
-      // send notification if requested
-      auto notify = std::atomic_load(&notifyer);
-      if(notify) notify->count_down();
-    }
 
     // vector of buffers - allocation is done in the constructor
     std::vector<T> buffers;

@@ -234,9 +234,11 @@ class future_queue : public future_queue_base {
       buffers[writeIndex] = std::move(t);
       latches[writeIndex].count_down();
       writeIndex = nextWriteIndex();
-      // send notification if requested
-      auto notify = std::atomic_load(&notifyerQueue);
-      if(notify) notify->push(get_id());
+      // send notification if requested and if data wasn't overwritten
+      if(ret) {
+        auto notify = std::atomic_load(&notifyerQueue);
+        if(notify) notify->push(get_id());
+      }
       return ret;
     }
 
@@ -300,9 +302,17 @@ class future_queue : public future_queue_base {
 // each data written to any of the queues. The order of the ids in this queue is guaranteed to be in the same order
 // the data has been written to the queues. If the same queue gets written to multiple times its id will be present in
 // the returned queue the same number of times.
+//
 // Behaviour is unspecified if, after the call to when_any, data is popped from one of the queues in the listOfQueues
-// without retreiving its id previously from the returned queue.
-// Behaviour is also unspecified if the same queue is passed to different calls to this function.
+// without retreiving its id previously from the returned queue. Behaviour is also unspecified if the same queue is
+// passed to different calls to this function.
+//
+// If push_overwrite() is used on one of the queues in listOfQueues, the notifications received through the returned 
+// queue might be in a different order (i.e. when data is overwritten, the corresponding queue id is not moved to
+// the correct place later in the notfication queue). Also, a notification for a value written to a queue with
+// push_overwrite() might appear in the notification queue before the value can be retrieve from the data queue. It is
+// therefore recommended to use pop_wait() to retrieve the values from the data queues if push_overwrite() is used.
+// Otherwise failed pop() have to be retried until the data is received.
 std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
 
     // Add lengthes of all queues - this will be the length of the notification queue

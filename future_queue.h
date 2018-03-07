@@ -7,6 +7,9 @@
 
 #include "latch.h"
 
+template<typename T>
+class future_queue;
+
 // Base class for future_queue which does not depend on the template argument. For a description see future_queue.
 class future_queue_base {
 
@@ -16,8 +19,7 @@ class future_queue_base {
     : id(get_next_id()),
       nBuffers(length+1),
       latches(length+1),
-      writeFlags(length+1),
-      updateIds(length+1)
+      writeFlags(length+1)
     {
       // buffer 0 will be the first buffer to use
       readIndex = 0;
@@ -69,6 +71,8 @@ class future_queue_base {
     class id_t {
       public:
         id_t(const id_t &other) : _id(other._id) {}
+        id_t(id_t &&other) : _id(other._id) {}
+        id_t() : _id(0) {}
         bool operator==(const id_t &rhs) const { return rhs._id == _id; }
         bool operator!=(const id_t &rhs) const { return rhs._id != _id; }
         bool operator<(const id_t &rhs) const { return rhs._id < _id; }
@@ -86,8 +90,13 @@ class future_queue_base {
     };
 
     // return a process-unique id_t of this
-    const id_t& get_id() const {
+    id_t get_id() const {
       return id;
+    }
+    
+    // return length of the queue
+    size_t size() const {
+      return nBuffers - 1;
     }
 
   protected:
@@ -103,9 +112,6 @@ class future_queue_base {
 
     // vector of write-reserved flags
     std::vector<std::atomic<size_t>> writeFlags;
-
-    // vector of update ids corresponding to the buffers
-    std::vector<size_t> updateIds;
 
     // index of the element which will be next written
     std::atomic<size_t> writeIndex;
@@ -141,22 +147,6 @@ class future_queue_base {
       return (readIndex+1) % nBuffers;
     }
 
-    // return next available update id (used in wait_any to determine the order)
-    static size_t get_next_update_id() {
-      static std::atomic<size_t> updateId{0};
-      ++updateId;
-      return updateId;
-    }
-
-    static size_t get_max_update_id() {
-      return std::numeric_limits<size_t>::max();
-    }
-
-    // Only allowed to call after has_data() has returned true!
-    size_t get_update_id() const {
-      return updateIds[readIndex];
-    }
-
     // reserve next available write slot. Returns false if no free slot is available or true on success.
     bool obtain_write_slot(size_t &index) {
       // last possble index for next write operation is just before the read index - one buffer must be kept free all times
@@ -179,10 +169,10 @@ class future_queue_base {
       return false;
     }
 
-    // Pointer to notification latch used to realise a wait_any logic.
-    std::shared_ptr<latch> notifyer;
+    // Pointer to notification queue used to realise a wait_any logic.
+    std::shared_ptr<future_queue<id_t>> notifyerQueue;
 
-    friend future_queue_base::id_t wait_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
+    friend std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
 
   private:
 
@@ -216,11 +206,10 @@ class future_queue : public future_queue_base {
       size_t myIndex;
       if(!obtain_write_slot(myIndex)) return false;
       buffers[myIndex] = std::move(t);
-      updateIds[myIndex] = get_next_update_id();
       latches[myIndex].count_down();
       // send notification if requested
-      auto notify = std::atomic_load(&notifyer);
-      if(notify) notify->count_down();
+      auto notify = std::atomic_load(&notifyerQueue);
+      if(notify) notify->push(get_id());
       return true;
     }
 
@@ -243,12 +232,11 @@ class future_queue : public future_queue_base {
         }
       }
       buffers[writeIndex] = std::move(t);
-      updateIds[writeIndex] = get_next_update_id();
       latches[writeIndex].count_down();
       writeIndex = nextWriteIndex();
       // send notification if requested
-      auto notify = std::atomic_load(&notifyer);
-      if(notify) notify->count_down();
+      auto notify = std::atomic_load(&notifyerQueue);
+      if(notify) notify->push(get_id());
       return ret;
     }
 
@@ -307,45 +295,25 @@ class future_queue : public future_queue_base {
 
 
 
-// wait until any of the specified future_queue instances has new data
-future_queue_base::id_t wait_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
+// Return a future_queue which will receive the future_queue_base::id_t of each queue in listOfQueues when the
+// respective queue has new data available for reading. This way the returned queue can be used to get notified about
+// each data written to any of the queues. The order of the ids in this queue is guaranteed to be in the same order
+// the data has been written to the queues. If the same queue gets written to multiple times its id will be present in
+// the returned queue the same number of times.
+// Behaviour is unspecified if, after the call to when_any, data is popped from one of the queues in the listOfQueues
+// without retreiving its id previously from the returned queue.
+// Behaviour is also unspecified if the same queue is passed to different calls to this function.
+std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
+
+    // Add lengthes of all queues - this will be the length of the notification queue
+    size_t summedLength = 0;
+    for(auto &queue : listOfQueues) summedLength += queue.get().size();
 
     // Create a latch in a shared pointer, so we can hand it on to the queues
-    std::shared_ptr<latch> notifyer = std::make_shared<latch>();
+    auto notifyerQueue = std::make_shared<future_queue<future_queue_base::id_t>>(summedLength);
 
-    // Distribute the pointer to the latch to all queues - since we have variadic arguments we need to call a recursive
-    // helper
-    for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyer), notifyer);
+    // Distribute the pointer to the latch to all queues
+    for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyerQueue), notifyerQueue);
 
-    // Check if data is present in any of the queues. This check is repeated in a loop since spurious wakeups can occur.
-    future_queue_base::id_t id(future_queue_base::id_t::nullid());
-    size_t updateId = future_queue_base::get_max_update_id();
-    while(true) {
-
-      // search for data and store the id of the first update (if multiple updates present)
-      for(auto &queue : listOfQueues) {
-        if(queue.get().has_data()) {
-          if(queue.get().get_update_id() < updateId) {
-            updateId = queue.get().get_update_id();
-            id = queue.get().get_id();
-          }
-        }
-      }
-
-      // if data has been found, terminate loop
-      if(id != future_queue_base::id_t::nullid()) break;
-
-      // If no data yet present, wait on the latch. Since we have locked it before, this will block
-      // until one of the queues unlocks it
-      notifyer->wait();
-      // Note: suprious wakeups might occur due to race conditions in case push_overwrite()
-    }
-
-    // Distribute a nullptr to all queues so they no longer try to notify (wouldn't be a big problem but might hurt
-    // performance)
-    notifyer = std::shared_ptr<latch>(nullptr);
-    for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyer), notifyer);
-
-    // return the id of the queue which has the oldest update (determined in wait_any_helper_check_for_data())
-    return id;
+    return notifyerQueue;
 }

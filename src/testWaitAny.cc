@@ -35,17 +35,20 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
           qref.emplace_back(q.back());
         }
 
+        // create notification queue
+        auto nq = when_any(qref);
+
         // write once to a single queue and find the change with wait_any
         size_t iq=0;
         for(auto &theQ : q) {
           ++iq;
           MovableDataType value( length*nqueues + iq );
           theQ.push(std::move(value));
-          auto id = wait_any(qref);
+          future_queue_base::id_t id;
+          nq->pop_wait(id);
           BOOST_CHECK( id == theQ.get_id() );
-          BOOST_CHECK_EQUAL( theQ.front().value(), length*nqueues + iq );
           MovableDataType readValue;
-          theQ.pop(readValue);
+          BOOST_CHECK( theQ.pop(readValue) );
           BOOST_CHECK_EQUAL( readValue.value(), length*nqueues + iq );
         }
 

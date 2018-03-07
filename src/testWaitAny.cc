@@ -25,8 +25,8 @@ constexpr int MovableDataType::undef;
 BOOST_AUTO_TEST_CASE(singleThreaded) {
 
     // test up to 100 queues up to a queue length of 100
-    for(size_t length=1; length<=100; ++length) {
-      for(size_t nqueues=1; nqueues<=100; ++nqueues) {
+    for(size_t length=2; length<=10; ++length) {
+      for(size_t nqueues=1; nqueues<=10; ++nqueues) {
 
         std::list<future_queue<MovableDataType>> q;
         std::list<std::reference_wrapper<future_queue_base>> qref;
@@ -45,12 +45,46 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
           MovableDataType value( length*nqueues + iq );
           theQ.push(std::move(value));
           future_queue_base::id_t id;
-          nq->pop_wait(id);
+          BOOST_CHECK( nq->pop(id) );
           BOOST_CHECK( id == theQ.get_id() );
           MovableDataType readValue;
           BOOST_CHECK( theQ.pop(readValue) );
           BOOST_CHECK_EQUAL( readValue.value(), length*nqueues + iq );
         }
+
+        // write a mixed sequece to the queues and check that the order is properly reflected in the notification queue
+        for(size_t i=0; i<length; ++i) {
+          iq=0;
+          for(auto &theQ : q) {
+            MovableDataType value( length*nqueues + i + iq );
+            BOOST_CHECK( theQ.push(std::move(value)) );
+            ++iq;
+          }
+        }
+        // all queues are now full, now overwrite the last written value in the first queue
+        {
+          MovableDataType value( 42 );
+          BOOST_CHECK( q.front().push_overwrite(std::move(value)) == false );
+        }
+        // check notifications in the notification queue (the overwrite in the first queue is not visible there!)
+        for(size_t i=0; i<length; ++i) {
+          iq=0;
+          for(auto &theQ : q) {
+            future_queue_base::id_t id;
+            nq->pop_wait(id);
+            BOOST_CHECK( id == theQ.get_id() );
+            MovableDataType readValue;
+            BOOST_CHECK( theQ.pop(readValue) );
+            if(i < length - 1 || iq > 0) {
+              BOOST_CHECK_EQUAL( readValue.value(), length*nqueues + i + iq );
+            }
+            else {
+              BOOST_CHECK_EQUAL( readValue.value(), 42 );    // was overwritten!
+            }
+            ++iq;
+          }
+        }
+
 
       }
     }

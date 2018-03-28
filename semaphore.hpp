@@ -1,3 +1,86 @@
+#include <features.h>
+
+/*
+ * Two implementations: one is based on the posix semaphore (sem_wait etc.), the other is pure C++ 11. The posix
+ * implementation is considered to be more efficient, so we use the pure C++ 11 implementation only as a fallback.
+ */
+
+#if _POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600
+/**********************************************************************************************************************
+ * POSIX-based implementation follows
+ *********************************************************************************************************************/
+
+#include <semaphore.h>
+
+class semaphore {
+
+  public:
+
+    semaphore() {
+      // create new semaphore which is not shared it between processes
+      int ret = sem_init(&sem, 0, 0);
+      if(ret != 0) throw;
+    }
+
+    ~semaphore() {
+      sem_destroy(&sem);
+    }
+
+    void count_down() {
+      int ret = sem_post(&sem);
+      if(ret != 0) throw;
+      // safety check against misuse
+      int value;
+      ret = sem_getvalue(&sem, &value);
+      if(ret != 0) throw;
+      assert(value <= 1);
+    }
+
+    void wait() {
+      int ret = sem_wait(&sem);
+      if(ret != 0) throw;
+      ret = sem_post(&sem);
+      if(ret != 0) throw;
+    }
+
+    bool is_ready() {
+      int value;
+      int ret = sem_getvalue(&sem, &value);
+      if(ret != 0) throw;
+      return value > 0;
+    }
+
+    void wait_and_reset() {
+      int ret = sem_wait(&sem);
+      if(ret != 0) throw;
+    }
+
+    bool is_ready_and_reset() {
+      int ret = sem_trywait(&sem);
+      if(ret != 0) {
+        if(errno == EAGAIN) {
+          return false;
+        }
+        else {
+          throw;
+        }
+      }
+      return true;
+    }
+
+  private:
+
+    // the POSIX semaphore object
+    sem_t sem;
+
+};
+
+#else
+
+/**********************************************************************************************************************
+ * Pure C++ 11 implementation follows
+ *********************************************************************************************************************/
+
 #include <mutex>
 #include <condition_variable>
 
@@ -9,7 +92,8 @@ class semaphore {
 
     void count_down() {
       std::unique_lock<decltype(_mutex)> lock(_mutex);
-      if(_count > 0) --_count;
+      assert(_count > 0);
+      --_count;
       if(_count == 0) _condition.notify_one();
     }
 
@@ -50,3 +134,5 @@ class semaphore {
     size_t _count;
 
 };
+
+#endif

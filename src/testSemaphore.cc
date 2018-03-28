@@ -28,15 +28,11 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
     sem.count_down();
     // now semaphore should be ready and wait() should not block
     BOOST_CHECK(sem.is_ready() == true);
-    sem.count_down();
-    BOOST_CHECK(sem.is_ready() == true);
     sem.wait();
     BOOST_CHECK(sem.is_ready() == true);
     sem.wait_and_reset();
     BOOST_CHECK(sem.is_ready() == false);
     // test reusing the semaphore
-    sem.count_down();
-    BOOST_CHECK(sem.is_ready() == true);
     sem.count_down();
     BOOST_CHECK(sem.is_ready() == true);
     sem.wait();
@@ -69,37 +65,6 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
     down_counting.join();
     waiting.join();
     BOOST_CHECK(sem.is_ready() == true);
-
-}
-
-/*********************************************************************************************************************/
-
-// many threads, each decreasing the count by 1 (+ the waiting thread)
-BOOST_AUTO_TEST_CASE(manyThreaded) {
-    std::cout << "manyThreaded" << std::endl;
-
-    for(size_t count=1; count<100; ++count) {
-
-      semaphore sem;
-
-      std::thread waiting( [&sem] {
-        sem.wait();
-        BOOST_CHECK(sem.is_ready() == true);
-      } );  // end waiting thread
-
-      std::thread down_counting[count];
-      for(size_t n=0; n<count; ++n) {
-        down_counting[n] = std::thread( [&sem] {
-          usleep(100);
-          sem.count_down();
-        } );  // end down_counting thread
-      }
-
-      for(size_t n=0; n<count; ++n) down_counting[n].join();
-      waiting.join();
-      BOOST_CHECK(sem.is_ready() == true);
-
-    }
 
 }
 

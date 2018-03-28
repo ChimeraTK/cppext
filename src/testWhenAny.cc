@@ -2,7 +2,7 @@
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
-#include "future_queue.h"
+#include "future_queue.hpp"
 
 BOOST_AUTO_TEST_SUITE(testWaitAny)
 

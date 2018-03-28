@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <unistd.h>
 
-#include "latch.h"
+#include "semaphore.hpp"
 
 template<typename T>
 class future_queue;
@@ -18,7 +18,7 @@ class future_queue_base {
     future_queue_base(size_t length)
     : id(get_next_id()),
       nBuffers(length+1),
-      latches(length+1),
+      semaphores(length+1),
       writeFlags(length+1)
     {
       // buffer 0 will be the first buffer to use
@@ -33,7 +33,7 @@ class future_queue_base {
     size_t write_available() const {
       size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
       size_t l_readIndex = readIndex;
-      // one buffer is always kept free so the receiver can always wait on a latch
+      // one buffer is always kept free so the receiver can always wait on a semaphore
       if(l_writeIndex < l_readIndex) {
         return l_readIndex - l_writeIndex - 1;
       }
@@ -60,7 +60,7 @@ class future_queue_base {
     // Check for the presence of readable data in the queue.
     bool has_data() {
       if(hasFrontOwnership) return true;
-      if(latches[readIndex].is_ready_and_reset()) {
+      if(semaphores[readIndex].is_ready_and_reset()) {
         hasFrontOwnership = true;
         return true;
       }
@@ -93,7 +93,7 @@ class future_queue_base {
     id_t get_id() const {
       return id;
     }
-    
+
     // return length of the queue
     size_t size() const {
       return nBuffers - 1;
@@ -107,8 +107,8 @@ class future_queue_base {
     // the number of buffers we have allocated
     size_t nBuffers;
 
-    // vector of latches corresponding to the buffers which allows the receiver to wait for new data
-    std::vector<latch> latches;
+    // vector of semaphores corresponding to the buffers which allows the receiver to wait for new data
+    std::vector<semaphore> semaphores;
 
     // vector of write-reserved flags
     std::vector<std::atomic<size_t>> writeFlags;
@@ -206,7 +206,7 @@ class future_queue : public future_queue_base {
       size_t myIndex;
       if(!obtain_write_slot(myIndex)) return false;
       buffers[myIndex] = std::move(t);
-      latches[myIndex].count_down();
+      semaphores[myIndex].count_down();
       // send notification if requested
       auto notify = std::atomic_load(&notifyerQueue);
       if(notify) notify->push(get_id());
@@ -221,18 +221,18 @@ class future_queue : public future_queue_base {
       assert(nBuffers-1 > 1);
       bool ret = true;
       if(write_available() == 0) {
-        if(latches[previousWriteIndex()].is_ready_and_reset()) {
+        if(semaphores[previousWriteIndex()].is_ready_and_reset()) {
           writeIndex = previousWriteIndex();
           ret = false;
         }
         else {
-          // if the latch for the last written buffer is no longer readym it means the buffer has been read already. In
+          // if the semaphore for the last written buffer is no longer readym it means the buffer has been read already. In
           // this case we should now have buffers available for writing.
           assert(write_available() > 0);
         }
       }
       buffers[writeIndex] = std::move(t);
-      latches[writeIndex].count_down();
+      semaphores[writeIndex].count_down();
       writeIndex = nextWriteIndex();
       // send notification if requested and if data wasn't overwritten
       if(ret) {
@@ -244,7 +244,7 @@ class future_queue : public future_queue_base {
 
     // Pop object off the queue and store it in t. If no data is available, false is returned
     bool pop(T& t) {
-      if(hasFrontOwnership || latches[readIndex].is_ready_and_reset()) {
+      if(hasFrontOwnership || semaphores[readIndex].is_ready_and_reset()) {
         t = std::move(buffers[readIndex]);
         writeFlags[readIndex] = 0;
         readIndex = nextReadIndex();
@@ -265,7 +265,7 @@ class future_queue : public future_queue_base {
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
       if(!hasFrontOwnership) {
-        latches[readIndex].wait_and_reset();
+        semaphores[readIndex].wait_and_reset();
       }
       else {
         hasFrontOwnership = false;
@@ -307,7 +307,7 @@ class future_queue : public future_queue_base {
 // without retreiving its id previously from the returned queue. Behaviour is also unspecified if the same queue is
 // passed to different calls to this function.
 //
-// If push_overwrite() is used on one of the queues in listOfQueues, the notifications received through the returned 
+// If push_overwrite() is used on one of the queues in listOfQueues, the notifications received through the returned
 // queue might be in a different order (i.e. when data is overwritten, the corresponding queue id is not moved to
 // the correct place later in the notfication queue). Also, a notification for a value written to a queue with
 // push_overwrite() might appear in the notification queue before the value can be retrieve from the data queue. It is
@@ -319,10 +319,10 @@ std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::r
     size_t summedLength = 0;
     for(auto &queue : listOfQueues) summedLength += queue.get().size();
 
-    // Create a latch in a shared pointer, so we can hand it on to the queues
+    // Create a notification queue in a shared pointer, so we can hand it on to the queues
     auto notifyerQueue = std::make_shared<future_queue<future_queue_base::id_t>>(summedLength);
 
-    // Distribute the pointer to the latch to all queues
+    // Distribute the pointer to the notification queue to all participating queues
     for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyerQueue), notifyerQueue);
 
     return notifyerQueue;

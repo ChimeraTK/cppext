@@ -1,11 +1,11 @@
 #include <mutex>
 #include <condition_variable>
 
-class latch {
+class semaphore {
 
   public:
 
-    latch(size_t count=1) : _count(count) {}
+    semaphore() : _count(1) {}
 
     void count_down() {
       std::unique_lock<decltype(_mutex)> lock(_mutex);
@@ -23,16 +23,16 @@ class latch {
       return _count == 0;
     }
 
-    void wait_and_reset(size_t count=1) {
+    void wait_and_reset() {
       std::unique_lock<decltype(_mutex)> lock(_mutex);
       while(_count > 0) _condition.wait(lock);
-      _count = count;
+      _count = 1;
     }
 
-    bool is_ready_and_reset(size_t count=1) {
+    bool is_ready_and_reset() {
       std::unique_lock<decltype(_mutex)> lock(_mutex);
       if(_count == 0) {
-        _count = count;
+        _count = 1;
         return true;
       }
       return false;
@@ -46,7 +46,7 @@ class latch {
     // condition variable used for notification
     std::condition_variable _condition;
 
-    // latch counter
+    // semaphore counter
     size_t _count;
 
 };

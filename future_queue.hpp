@@ -212,6 +212,9 @@ class future_queue : public future_queue_base {
       if(notify) notify->push(get_id());
       return true;
     }
+    bool push(const T& t) {
+      return push(T(t));
+    }
 
     // Push object t to the queue. If the queue is full, the last element will be overwritten and false will be
     // returned. If no data had to be overwritten, true is returned.
@@ -240,6 +243,9 @@ class future_queue : public future_queue_base {
         if(notify) notify->push(get_id());
       }
       return ret;
+    }
+    bool push_overwrite(const T& t) {
+      return push_overwrite(T(t));
     }
 
     // Pop object off the queue and store it in t. If no data is available, false is returned

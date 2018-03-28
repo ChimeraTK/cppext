@@ -36,13 +36,6 @@ class semaphore {
       assert(value <= 1);
     }
 
-    void wait() {
-      int ret = sem_wait(&sem);
-      if(ret != 0) throw;
-      ret = sem_post(&sem);
-      if(ret != 0) throw;
-    }
-
     bool is_ready() {
       int value;
       int ret = sem_getvalue(&sem, &value);
@@ -95,11 +88,6 @@ class semaphore {
       assert(_count > 0);
       --_count;
       if(_count == 0) _condition.notify_one();
-    }
-
-    void wait() {
-      std::unique_lock<decltype(_mutex)> lock(_mutex);
-      while(_count > 0) _condition.wait(lock);
     }
 
     bool is_ready() {

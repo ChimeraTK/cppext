@@ -28,14 +28,10 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
     sem.unlock();
     // now semaphore should be ready and wait() should not block
     BOOST_CHECK(sem.is_ready() == true);
-    sem.wait();
-    BOOST_CHECK(sem.is_ready() == true);
     sem.wait_and_reset();
     BOOST_CHECK(sem.is_ready() == false);
     // test reusing the semaphore
     sem.unlock();
-    BOOST_CHECK(sem.is_ready() == true);
-    sem.wait();
     BOOST_CHECK(sem.is_ready() == true);
     sem.wait_and_reset();
     BOOST_CHECK(sem.is_ready() == false);
@@ -54,7 +50,7 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
 
     std::thread waiting( [&sem] {
       BOOST_CHECK(sem.is_ready() == false);
-      sem.wait();
+      sem.wait_and_reset();
     } );  // end waiting thread
 
     std::thread down_counting( [&sem] {
@@ -64,7 +60,7 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
 
     down_counting.join();
     waiting.join();
-    BOOST_CHECK(sem.is_ready() == true);
+    BOOST_CHECK(sem.is_ready() == false);
 
 }
 

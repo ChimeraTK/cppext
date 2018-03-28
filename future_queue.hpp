@@ -206,7 +206,7 @@ class future_queue : public future_queue_base {
       size_t myIndex;
       if(!obtain_write_slot(myIndex)) return false;
       buffers[myIndex] = std::move(t);
-      semaphores[myIndex].count_down();
+      semaphores[myIndex].unlock();
       // send notification if requested
       auto notify = std::atomic_load(&notifyerQueue);
       if(notify) notify->push(get_id());
@@ -232,7 +232,7 @@ class future_queue : public future_queue_base {
         }
       }
       buffers[writeIndex] = std::move(t);
-      semaphores[writeIndex].count_down();
+      semaphores[writeIndex].unlock();
       writeIndex = nextWriteIndex();
       // send notification if requested and if data wasn't overwritten
       if(ret) {

@@ -26,7 +26,7 @@ class semaphore {
       sem_destroy(&sem);
     }
 
-    void count_down() {
+    void unlock() {
       int ret = sem_post(&sem);
       if(ret != 0) throw;
       // safety check against misuse
@@ -90,7 +90,7 @@ class semaphore {
 
     semaphore() : _count(1) {}
 
-    void count_down() {
+    void unlock() {
       std::unique_lock<decltype(_mutex)> lock(_mutex);
       assert(_count > 0);
       --_count;

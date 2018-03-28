@@ -16,16 +16,20 @@ class semaphore {
 
   public:
 
+    /** Create a new semaphore which is initially not ready */
     semaphore() {
       // create new semaphore which is not shared it between processes
       int ret = sem_init(&sem, 0, 0);
       if(ret != 0) throw;
     }
 
+    /** Destroy semaphore. No other thread must be waiting on this semaphore when the destructor is called. */
     ~semaphore() {
       sem_destroy(&sem);
     }
 
+    /** Make the semaphore ready. If another thread is currently waiting for the semaphore (see wait_and_reset()), it
+     *  will be unblocked. Calling unlock() on a semaphore which is already ready is not allowed. */
     void unlock() {
       int ret = sem_post(&sem);
       if(ret != 0) throw;
@@ -36,6 +40,7 @@ class semaphore {
       assert(value <= 1);
     }
 
+    /** Check if the semaphore is currently ready. Does not block or alter the state of the semaphore. */
     bool is_ready() {
       int value;
       int ret = sem_getvalue(&sem, &value);
@@ -43,11 +48,17 @@ class semaphore {
       return value > 0;
     }
 
+    /** Block the calling thread until the semaphore gets ready, i.e. unlock() is called by another thread. If the
+     *  semaphore is already ready when entering this function, it will not block. The semaphore will be atomically
+     *  locked again, so if multiple threads are waiting on the same semaphore at the same time, only one of them
+     *  will unblock. */
     void wait_and_reset() {
       int ret = sem_wait(&sem);
       if(ret != 0) throw;
     }
 
+    /** Check if the semaphore is ready. If not, return false immediately. If yes, atomically lock the semaphore and
+     *  return true. */
     bool is_ready_and_reset() {
       int ret = sem_trywait(&sem);
       if(ret != 0) {

@@ -23,7 +23,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     constexpr size_t nSenders = nQueues / nQueuesPerSender;
     constexpr size_t nReceivers = nQueues / nQueuesPerReceiver;
 
-    std::atomic<bool> shutdown;
+    std::atomic<bool> shutdownSenders, shutdownReceivers;
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -36,35 +36,10 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     }
 
     // list of threads so we can collect them later
-    std::list<boost::thread> myThreads;
+    std::list<boost::thread> senderThreads, receiverThreads;
 
-    // launch sender threads
+    // launch receiver threads. They should come first, since when_any() should be executed before the senders start sending.
     auto qit = qlist.begin();
-    for(size_t i=0; i<nSenders; ++i) {
-
-      // build list of queues and next values to send
-      std::vector<int> nextValues;
-      std::vector<std::reference_wrapper<future_queue<int>>> myqueues;
-      for(size_t k=0; k<nQueuesPerSender; ++k) {
-        myqueues.emplace_back(*qit);
-        ++qit;
-        nextValues.push_back(0);
-      }
-
-      myThreads.emplace_back( [nextValues, myqueues, &shutdown] () mutable {
-        // 'endless' loop to send data
-        while(!shutdown) {
-          for(size_t k=0; k<nQueuesPerSender; ++k) {
-            bool success = myqueues[k].get().push(nextValues[k]);
-            if(success) ++nextValues[k];
-          }
-        }
-      } );  // end sender thread
-    }
-    assert(qit == qlist.end());
-
-    // launch receiver threads
-    qit = qlist.begin();
     for(size_t i=0; i<nReceivers; ++i) {
 
       // build list of queues and next values to send
@@ -84,9 +59,9 @@ BOOST_AUTO_TEST_CASE(stresstest) {
 
       int type = i % 2;       // alternate the different receiver types
       if(type == 0) {         // first type: go through all queues and wait on each once
-        myThreads.emplace_back( [nextValues, myqueues, &shutdown] () mutable {
+        receiverThreads.emplace_back( [i,nextValues, myqueues, &shutdownReceivers] () mutable {
           // 'endless' loop to send data
-          while(!shutdown) {
+          while(!shutdownReceivers) {
             for(size_t k=0; k<nQueuesPerReceiver; ++k) {
               int value;
               myqueues[k].get().pop_wait(value);
@@ -97,11 +72,12 @@ BOOST_AUTO_TEST_CASE(stresstest) {
         } );  // end receiver thread for first type
       }
       else if(type == 1) {         // second type: use when_any
-        myThreads.emplace_back( [nextValues2, myqueues2, myqueuemap, &shutdown] () mutable {
-          // obtain notification queue
-          auto notifyer = when_any(myqueues2);
+        // obtain notification queue
+        auto notifyer = when_any(myqueues2);
+        // launch the thread
+        receiverThreads.emplace_back( [i,nextValues2, notifyer, myqueuemap, &shutdownReceivers] () mutable {
           // 'endless' loop to send data
-          while(!shutdown) {
+          while(!shutdownReceivers) {
             future_queue_base::id_t id;
             notifyer->pop_wait(id);
             int value;
@@ -114,19 +90,49 @@ BOOST_AUTO_TEST_CASE(stresstest) {
         } );  // end receiver thread for first type
       }
     }
+    assert(qit == qlist.end());
 
-    // run the test for 30 seconds
+    // launch sender threads
+    qit = qlist.begin();
+    for(size_t i=0; i<nSenders; ++i) {
+
+      // build list of queues and next values to send
+      std::vector<int> nextValues;
+      std::vector<std::reference_wrapper<future_queue<int>>> myqueues;
+      for(size_t k=0; k<nQueuesPerSender; ++k) {
+        myqueues.emplace_back(*qit);
+        ++qit;
+        nextValues.push_back(0);
+      }
+
+      senderThreads.emplace_back( [nextValues, myqueues, &shutdownSenders] () mutable {
+        //std::cout << "Launching sender..." << std::endl;
+        // 'endless' loop to send data
+        while(!shutdownSenders) {
+          for(size_t k=0; k<nQueuesPerSender; ++k) {
+            bool success = myqueues[k].get().push(nextValues[k]);
+            if(success) ++nextValues[k];
+          }
+        }
+        // send one more value before shutting down, so the receiving side does not hang
+        for(size_t k=0; k<nQueuesPerSender; ++k) myqueues[k].get().push(nextValues[k]);
+        //std::cout << "Terminating sender..." << std::endl;
+      } );  // end sender thread
+    }
+    assert(qit == qlist.end());
+
+    // run the test for N seconds
     std::cout << "Keep the test running for " << runForSeconds << " seconds..." << std::endl;
     sleep(runForSeconds);
 
     // Shutdown all threads and join them. It is important do to that before the queues get destroyed.
     std::cout << "Terminate all threads..." << std::endl;
-    shutdown = true;
-    for(auto &t : myThreads) {
-      pthread_kill(t.native_handle(), SIGINT);
-      t.join();
-    }
-    std::cout << "All threads are terminated." << std::endl;
+    shutdownReceivers = true;
+    for(auto &t : receiverThreads) t.join();
+    std::cout << "All receivers are terminated." << std::endl;
+    shutdownSenders = true;
+    for(auto &t : senderThreads) t.join();
+    std::cout << "All senders are terminated." << std::endl;
 
 }
 

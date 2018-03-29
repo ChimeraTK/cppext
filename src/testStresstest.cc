@@ -13,7 +13,7 @@ BOOST_AUTO_TEST_SUITE(testStresstest)
 
 BOOST_AUTO_TEST_CASE(stresstest) {
 
-    constexpr size_t runForSeconds = 300;
+    constexpr size_t runForSeconds = 10;
     constexpr size_t nQueues = 500;
     constexpr size_t nQueuesPerSender = 20;
     constexpr size_t nQueuesPerReceiver = 50;

@@ -2,7 +2,7 @@ PROJECT(future_queue_tests)
 cmake_minimum_required(VERSION 2.8)
 
 # find BOOST unit test framework
-FIND_PACKAGE(Boost COMPONENTS unit_test_framework REQUIRED)
+FIND_PACKAGE(Boost COMPONENTS unit_test_framework thread REQUIRED)
 
 
 # Moderate version of the compiler flags
@@ -21,7 +21,7 @@ foreach( testExecutableSrcFile ${testExecutables})
   #NAME_WE means the base name without path and (longest) extension
   get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
   add_executable(${excutableName} ${testExecutableSrcFile})
-  target_link_libraries(${excutableName} pthread)
+  target_link_libraries(${excutableName} ${Boost_LIBRARIES})
   add_test(${excutableName} ${excutableName})
 endforeach( testExecutableSrcFile )
 

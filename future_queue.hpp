@@ -209,7 +209,10 @@ class future_queue : public future_queue_base {
       semaphores[myIndex].unlock();
       // send notification if requested
       auto notify = std::atomic_load(&notifyerQueue);
-      if(notify) notify->push(get_id());
+      if(notify) {
+        bool nret = notify->push(get_id());
+        assert(nret == true);
+      }
       return true;
     }
     bool push(const T& t) {

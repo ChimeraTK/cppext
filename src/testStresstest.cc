@@ -59,7 +59,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
 
       int type = i % 2;       // alternate the different receiver types
       if(type == 0) {         // first type: go through all queues and wait on each once
-        receiverThreads.emplace_back( [i,nextValues, myqueues, &shutdownReceivers] () mutable {
+        receiverThreads.emplace_back( [nextValues, myqueues, &shutdownReceivers] () mutable {
           // 'endless' loop to send data
           while(!shutdownReceivers) {
             for(size_t k=0; k<nQueuesPerReceiver; ++k) {
@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
         // obtain notification queue
         auto notifyer = when_any(myqueues2);
         // launch the thread
-        receiverThreads.emplace_back( [i,nextValues2, notifyer, myqueuemap, &shutdownReceivers] () mutable {
+        receiverThreads.emplace_back( [nextValues2, notifyer, myqueuemap, &shutdownReceivers] () mutable {
           // 'endless' loop to send data
           while(!shutdownReceivers) {
             future_queue_base::id_t id;
@@ -108,10 +108,19 @@ BOOST_AUTO_TEST_CASE(stresstest) {
       senderThreads.emplace_back( [nextValues, myqueues, &shutdownSenders] () mutable {
         //std::cout << "Launching sender..." << std::endl;
         // 'endless' loop to send data
+        std::vector<size_t> consequtive_fails(nQueuesPerSender);
         while(!shutdownSenders) {
           for(size_t k=0; k<nQueuesPerSender; ++k) {
             bool success = myqueues[k].get().push(nextValues[k]);
-            if(success) ++nextValues[k];
+            if(success) {
+              ++nextValues[k];
+              consequtive_fails[k] = 0;
+            }
+            else {
+              ++consequtive_fails[k];
+              assert(consequtive_fails[k] < 1000);
+              if(consequtive_fails[k] > 100) usleep(1000);
+            }
           }
         }
         // send one more value before shutting down, so the receiving side does not hang

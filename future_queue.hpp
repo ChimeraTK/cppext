@@ -11,56 +11,34 @@ template<typename T>
 class future_queue;
 
 // Base class for future_queue which does not depend on the template argument. For a description see future_queue.
+// FIXME protect index handling against overruns of size_t!
 class future_queue_base {
 
   public:
 
-    future_queue_base(size_t length)
-    : id(get_next_id()),
-      nBuffers(length+1),
-      semaphores(length+1),
-      writeFlags(length+1)
-    {
-      // buffer 0 will be the first buffer to use
-      readIndex = 0;
-      writeIndex = 0;
-
-      hasFrontOwnership = false;
-    }
-
-    // number of push operations which can be performed before the queue is full
-    // Note: in a multi-producer context the result will be inaccurate!
+    // Number of push operations which can be performed before the queue is full.
     size_t write_available() const {
-      size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
+      size_t l_writeIndex = writeIndex;
       size_t l_readIndex = readIndex;
-      // one buffer is always kept free so the receiver can always wait on a semaphore
-      if(l_writeIndex < l_readIndex) {
-        return l_readIndex - l_writeIndex - 1;
+      if(l_writeIndex - l_readIndex < nBuffers-1) {
+        return nBuffers - (l_writeIndex - l_readIndex) - 1;
       }
       else {
-        return nBuffers + l_readIndex - l_writeIndex - 1;
+        return 0;
       }
     }
 
     // Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
     // in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
     // accessing it through pop() or front(), use has_data().
-    // Note: in a multi-producer context the result will be inaccurate!
     size_t read_available() {
-      size_t l_writeIndex = writeIndex;     // local copies to ensure consistency
-      size_t l_readIndex = readIndex;
-      if(l_readIndex <= l_writeIndex) {
-        return l_writeIndex - l_readIndex;
-      }
-      else {
-        return nBuffers + l_writeIndex - l_readIndex;
-      }
+      return readIndexMax - readIndex;
     }
 
     // Check for the presence of readable data in the queue.
     bool has_data() {
       if(hasFrontOwnership) return true;
-      if(semaphores[readIndex].is_ready_and_reset()) {
+      if(semaphores[readIndex%nBuffers].is_ready_and_reset()) {
         hasFrontOwnership = true;
         return true;
       }
@@ -99,7 +77,17 @@ class future_queue_base {
       return nBuffers - 1;
     }
 
-  protected:
+  //protected:      // FIXME make protected again - requires change of testObtainWriteSlot
+
+    future_queue_base(size_t length)
+    : id(get_next_id()),
+      nBuffers(length+1),
+      semaphores(length+1),
+      writeIndex(0),
+      readIndexMax(0),
+      readIndex(0),
+      hasFrontOwnership(false)
+    {}
 
     // process-unique id_t of this queue
     id_t id;
@@ -110,11 +98,12 @@ class future_queue_base {
     // vector of semaphores corresponding to the buffers which allows the receiver to wait for new data
     std::vector<semaphore> semaphores;
 
-    // vector of write-reserved flags
-    std::vector<std::atomic<size_t>> writeFlags;
-
     // index of the element which will be next written
     std::atomic<size_t> writeIndex;
+
+    // maximum index which the receiver is currently allowed to read (after checking it semaphore). Often equal to
+    // writeIndex, unless write operations are currently in progress
+    std::atomic<size_t> readIndexMax;
 
     // index of the element which will be next read
     std::atomic<size_t> readIndex;
@@ -122,51 +111,31 @@ class future_queue_base {
     // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
     bool hasFrontOwnership;
 
-    // return the next index
-    size_t nextIndex(size_t index) const {
-      return (index+1) % nBuffers;
-    }
-
-    // return the preious index
-    size_t previousIndex(size_t index) const {
-      return (index+nBuffers-1) % nBuffers;
-    }
-
-    // return the next write index (without changing the member) - no checking if free buffers are available is done!
-    size_t nextWriteIndex() {
-      return (writeIndex+1) % nBuffers;
-    }
-
-    // return the previous write index (without changing the member) - no checking of anything is done!
-    size_t previousWriteIndex() {
-      return (writeIndex+nBuffers-1) % nBuffers;
-    }
-
-    // return the next read index (without changing the member) - no checking if full buffers are available is done!
-    size_t nextReadIndex() {
-      return (readIndex+1) % nBuffers;
-    }
-
     // reserve next available write slot. Returns false if no free slot is available or true on success.
     bool obtain_write_slot(size_t &index) {
-      // last possble index for next write operation is just before the read index - one buffer must be kept free all times
-      size_t writeIndexMax = previousIndex(readIndex);
-      // try all queue slots until a free one is found
-      for(index = writeIndex; index != writeIndexMax; index = nextIndex(index)) {
-        auto flag = ++writeFlags[index];
-        if(flag == 1) {
-          // atomically move write index forward
-          while(true) {
-            size_t oldWriteIndex = writeIndex;
-            size_t newWriteIndex = nextIndex(oldWriteIndex);
-            bool done = writeIndex.compare_exchange_weak(oldWriteIndex,newWriteIndex);
-            if(done) break;
-          }
-          return true;
-        }
-        --writeFlags[index];
+      index = writeIndex;
+      while(true) {
+        if(index >= readIndex+nBuffers - 1) return false;   // queue is full
+        bool success = writeIndex.compare_exchange_weak(index, index+1);
+        if(success) break;
       }
-      return false;
+      return true;
+    }
+
+    // update readIndexMax after a write operation was completed
+    void update_read_index_max() {
+      size_t l_readIndex = readIndex;
+      size_t l_writeIndex = writeIndex;
+      size_t l_readIndexMax = readIndexMax;
+      if(l_writeIndex >= l_readIndex+nBuffers) l_writeIndex = l_readIndex+nBuffers-1;
+      size_t newReadIndexMax = l_readIndexMax;
+      do {
+        for(size_t index = l_readIndexMax; index <= l_writeIndex-1; ++index) {
+          if(!semaphores[index % nBuffers].is_ready()) break;
+          newReadIndexMax = index+1;
+        }
+        readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
+      } while(readIndexMax < newReadIndexMax);
     }
 
     // Pointer to notification queue used to realise a wait_any logic.
@@ -205,8 +174,10 @@ class future_queue : public future_queue_base {
     bool push(T&& t) {
       size_t myIndex;
       if(!obtain_write_slot(myIndex)) return false;
-      buffers[myIndex] = std::move(t);
-      semaphores[myIndex].unlock();
+      buffers[myIndex % nBuffers] = std::move(t);
+      assert(!semaphores[myIndex % nBuffers].is_ready());
+      semaphores[myIndex % nBuffers].unlock();
+      update_read_index_max();
       // send notification if requested
       auto notify = std::atomic_load(&notifyerQueue);
       if(notify) {
@@ -227,19 +198,21 @@ class future_queue : public future_queue_base {
       assert(nBuffers-1 > 1);
       bool ret = true;
       if(write_available() == 0) {
-        if(semaphores[previousWriteIndex()].is_ready_and_reset()) {
-          writeIndex = previousWriteIndex();
+        if(semaphores[(writeIndex-1)%nBuffers].is_ready_and_reset()) {
           ret = false;
         }
         else {
-          // if the semaphore for the last written buffer is no longer readym it means the buffer has been read already. In
+          // if the semaphore for the last written buffer is no longer ready it means the buffer has been read already. In
           // this case we should now have buffers available for writing.
           assert(write_available() > 0);
         }
+        writeIndex--;
       }
-      buffers[writeIndex] = std::move(t);
-      semaphores[writeIndex].unlock();
-      writeIndex = nextWriteIndex();
+      buffers[writeIndex%nBuffers] = std::move(t);
+      writeIndex++;
+      assert(!semaphores[(writeIndex-1)%nBuffers].is_ready());
+      semaphores[(writeIndex-1)%nBuffers].unlock();
+      readIndexMax = size_t(writeIndex);
       // send notification if requested and if data wasn't overwritten
       if(ret) {
         auto notify = std::atomic_load(&notifyerQueue);
@@ -253,10 +226,10 @@ class future_queue : public future_queue_base {
 
     // Pop object off the queue and store it in t. If no data is available, false is returned
     bool pop(T& t) {
-      if(hasFrontOwnership || semaphores[readIndex].is_ready_and_reset()) {
-        t = std::move(buffers[readIndex]);
-        writeFlags[readIndex] = 0;
-        readIndex = nextReadIndex();
+      if( hasFrontOwnership || semaphores[readIndex%nBuffers].is_ready_and_reset() ) {
+        t = std::move(buffers[readIndex%nBuffers]);
+        assert(readIndex < writeIndex);
+        readIndex++;
         hasFrontOwnership = false;
         return true;
       }
@@ -274,14 +247,14 @@ class future_queue : public future_queue_base {
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
       if(!hasFrontOwnership) {
-        semaphores[readIndex].wait_and_reset();
+        semaphores[readIndex%nBuffers].wait_and_reset();
       }
       else {
         hasFrontOwnership = false;
       }
-      t = std::move(buffers[readIndex]);
-      writeFlags[readIndex] = 0;
-      readIndex = nextReadIndex();
+      t = std::move(buffers[readIndex%nBuffers]);
+      assert(readIndex < writeIndex);
+      readIndex++;
     }
 
     // Pop object off the queue and discard it. This function will block until data is available.
@@ -294,7 +267,7 @@ class future_queue : public future_queue_base {
     // in the queue by calling has_data() before calling this function.
     const T& front() const {
       assert(hasFrontOwnership);
-      return buffers[readIndex];
+      return buffers[readIndex%nBuffers];
     }
 
   private:

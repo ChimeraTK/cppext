@@ -4,17 +4,9 @@ using namespace boost::unit_test_framework;
 
 #include "future_queue.hpp"
 
-BOOST_AUTO_TEST_SUITE(testPushPop)
+#include "threadsafe_unit_test.hpp"
 
-#define BOOST_CHECK_TIMEOUT(condition)                                                                                  \
-  {                                                                                                                     \
-    bool isOk = false;                                                                                                  \
-    for(size_t i=0; i<1000; ++i) {                                                                                      \
-      if(condition) { isOk = true; break; }                                                                             \
-      usleep(10000);                                                                                                    \
-    }                                                                                                                   \
-    if(!isOk) BOOST_ERROR("Check with timeout on condition failed: " #condition);                                       \
-  }
+BOOST_AUTO_TEST_SUITE(testPushPop)
 
 
 // test with a custom data type which is not known to the queue
@@ -34,6 +26,7 @@ constexpr int MovableDataType::undef;
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(singleThreaded) {
+    std::cout << "singleThreaded" << std::endl;
 
     // test up to a queue length of 100, start with 1
     for(size_t length=1; length<=100; ++length) {
@@ -93,6 +86,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(multiThreaded) {
+    std::cout << "multiThreaded" << std::endl;
 
     // test up to a queue length of 100, start with 1
     for(size_t length=1; length<=100; ++length) {
@@ -103,13 +97,13 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
       {
         std::thread sender( [&q1, length] {
           MovableDataType value( length + 42 );
-          BOOST_CHECK( q1.push(std::move(value)) == true );
-          BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
+          BOOST_CHECK_TS( q1.push(std::move(value)) == true );
+          BOOST_CHECK_EQUAL_TS( value.value(), MovableDataType::undef );
         } );  // end sender thread
         std::thread receiver( [&q1, length] {
           MovableDataType value;
           BOOST_CHECK_TIMEOUT( q1.pop(value) == true );
-          BOOST_CHECK_EQUAL( value.value(), length + 42 );
+          BOOST_CHECK_EQUAL_TS( value.value(), (signed) length + 42 );
         } );  // end receiver thread
         sender.join();
         receiver.join();
@@ -120,13 +114,13 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
         std::thread receiver( [&q1, length] {
           MovableDataType value;
           q1.pop_wait(value);
-          BOOST_CHECK_EQUAL( value.value(), length + 42 );
+          BOOST_CHECK_EQUAL_TS( value.value(), (signed) length + 42 );
         } );  // end receiver thread
         std::thread sender( [&q1, length] {
           MovableDataType value( length + 42 );
           usleep(10000);    // intentionally slow down sender
-          BOOST_CHECK( q1.push(std::move(value)) == true );
-          BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
+          BOOST_CHECK_TS( q1.push(std::move(value)) == true );
+          BOOST_CHECK_EQUAL_TS( value.value(), MovableDataType::undef );
         } );  // end sender thread
         sender.join();
         receiver.join();
@@ -137,8 +131,8 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
         std::thread sender( [&q1, length] {
           for(size_t n=0; n<length; ++n) {
             MovableDataType value( length + n + 120 );
-            BOOST_CHECK( q1.push(std::move(value)) == true );
-            BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
+            BOOST_CHECK_TS( q1.push(std::move(value)) == true );
+            BOOST_CHECK_EQUAL_TS( value.value(), MovableDataType::undef );
           }
         } );  // end sender thread
         std::thread receiver( [&q1, length] {
@@ -146,28 +140,28 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
             usleep(100);    // intentionally slow down receiver
             MovableDataType value;
             BOOST_CHECK_TIMEOUT( q1.pop(value) == true );
-            BOOST_CHECK_EQUAL( value.value(), length + n + 120 );
+            BOOST_CHECK_EQUAL_TS( value.value(), (signed) length + (signed) n + 120 );
           }
         } );  // end receiver thread
         sender.join();
         receiver.join();
       }
 
-      // transport maximum number of values at a time with pop_wait
+      // transport values with pop_wait
       {
         std::thread receiver( [&q1, length] {
           for(size_t n=0; n<length; ++n) {
             MovableDataType value;
             q1.pop_wait(value);
-            BOOST_CHECK_EQUAL( value.value(), length + n + 120 );
+            BOOST_CHECK_EQUAL_TS( value.value(), (signed) length + (signed) n + 120 );
           }
         } );  // end receiver thread
         std::thread sender( [&q1, length] {
           for(size_t n=0; n<length; ++n) {
             usleep(100);    // intentionally slow down sender
             MovableDataType value( length + n + 120 );
-            BOOST_CHECK( q1.push(std::move(value)) == true );
-            BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
+            BOOST_CHECK_TS( q1.push(std::move(value)) == true );
+            BOOST_CHECK_EQUAL_TS( value.value(), MovableDataType::undef );
           }
         } );  // end sender thread
         sender.join();
@@ -179,26 +173,26 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
         std::thread sender( [&q1, length] {
           for(size_t n=0; n<length; ++n) {
             MovableDataType value( length + n + 120 );
-            BOOST_CHECK( q1.push(std::move(value)) == true );
-            BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
+            BOOST_CHECK_TS( q1.push(std::move(value)) == true );
+            BOOST_CHECK_EQUAL_TS( value.value(), MovableDataType::undef );
           }
           { // queue is already full
             MovableDataType value( -666 );
-            BOOST_CHECK( q1.push(std::move(value)) == false );
-            BOOST_CHECK_EQUAL( value.value(), -666 );
+            BOOST_CHECK_TS( q1.push(std::move(value)) == false );
+            BOOST_CHECK_EQUAL_TS( value.value(), -666 );
           }
         } );  // end sender thread
         sender.join();                          // otherwise the queue will never be full
         std::thread receiver( [&q1, length] {
           for(size_t n=0; n<length; ++n) {
             MovableDataType value;
-            BOOST_CHECK( q1.pop(value) == true );
-            BOOST_CHECK_EQUAL( value.value(), length + n + 120 );
+            BOOST_CHECK_TS( q1.pop(value) == true );
+            BOOST_CHECK_EQUAL_TS( value.value(), (signed) length + (signed) n + 120 );
           }
           { // queue is already empty
             MovableDataType value( -777 );
-            BOOST_CHECK( q1.pop(value) == false );
-            BOOST_CHECK_EQUAL( value.value(), -777 );
+            BOOST_CHECK_TS( q1.pop(value) == false );
+            BOOST_CHECK_EQUAL_TS( value.value(), -777 );
           }
         } );  // end receiver thread
         receiver.join();

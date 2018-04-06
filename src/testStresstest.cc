@@ -5,6 +5,8 @@ using namespace boost::unit_test_framework;
 #include <random>
 #include <boost/thread/thread.hpp>
 
+#include "threadsafe_unit_test.hpp"
+
 #include "future_queue.hpp"
 
 BOOST_AUTO_TEST_SUITE(testStresstest)
@@ -24,6 +26,8 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     constexpr size_t nReceivers = nQueues / nQueuesPerReceiver;
 
     std::atomic<bool> shutdownSenders, shutdownReceivers;
+    shutdownSenders = false;
+    shutdownReceivers = false;
 
     std::random_device rd;
     std::mt19937 gen(rd());

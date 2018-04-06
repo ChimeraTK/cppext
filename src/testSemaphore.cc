@@ -4,17 +4,11 @@ using namespace boost::unit_test_framework;
 
 #include "semaphore.hpp"
 
+#include "threadsafe_unit_test.hpp"
+
 #include <thread>
 
 BOOST_AUTO_TEST_SUITE(TestLatch)
-
-#define BOOST_CHECK_TIMEOUT(condition)                                                                                  \
-  bool isOk = false;                                                                                                    \
-  for(size_t i=0; i<1000; ++i) {                                                                                        \
-    if(condition) { isOk = true; break; }                                                                               \
-    usleep(10000);                                                                                                      \
-  }                                                                                                                     \
-  if(!isOk) BOOST_ERROR("Check with timeout on condition failed: " #condition)
 
 /*********************************************************************************************************************/
 
@@ -49,7 +43,7 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
     semaphore sem;
 
     std::thread waiting( [&sem] {
-      BOOST_CHECK(sem.is_ready() == false);
+      BOOST_CHECK_TS(sem.is_ready() == false);
       sem.wait_and_reset();
     } );  // end waiting thread
 
@@ -60,7 +54,7 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
 
     down_counting.join();
     waiting.join();
-    BOOST_CHECK(sem.is_ready() == false);
+    BOOST_CHECK_TS(sem.is_ready() == false);
 
 }
 

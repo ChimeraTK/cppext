@@ -182,6 +182,7 @@ class future_queue : public future_queue_base {
       auto notify = std::atomic_load(&notifyerQueue);
       if(notify) {
         bool nret = notify->push(get_id());
+        (void)nret;
         assert(nret == true);
       }
       return true;

@@ -87,6 +87,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
             int value;
             assert(myqueuemap.at(id).get().has_data());
             bool ret = myqueuemap.at(id).get().pop(value);
+            (void)ret;
             assert(ret);
             assert(value == nextValues2.at(id));
             ++nextValues2.at(id);

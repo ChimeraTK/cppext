@@ -1,7 +1,7 @@
 project(future_queue_tests)
 cmake_minimum_required(VERSION 2.8)
 
-# find BOOST unit test framework
+# find BOOST libraries
 find_package(Boost COMPONENTS unit_test_framework thread REQUIRED)
 find_package (Threads REQUIRED)
 
@@ -18,7 +18,7 @@ foreach( testExecutableSrcFile ${testExecutables})
   #NAME_WE means the base name without path and (longest) extension
   get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
   add_executable(${excutableName} ${testExecutableSrcFile})
-  target_link_libraries(${excutableName} ${Boost_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+  target_link_libraries(${excutableName} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
   add_test(${excutableName} ${excutableName})
 endforeach( testExecutableSrcFile )
 

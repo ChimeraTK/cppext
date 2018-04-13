@@ -7,7 +7,7 @@ find_package (Threads REQUIRED)
 
 # Moderate version of the compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -fPIC -Wextra -Wuninitialized")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -fno-inline -fno-inline-small-functions -fno-default-inline")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -fno-inline")
 
 include_directories(${CMAKE_SOURCE_DIR})
 

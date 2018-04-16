@@ -11,7 +11,6 @@ The future_queue is a thread-safe queue with the following features:
 * when_any(): get notified on new data in a given list of future_queues in a well-defined order
 
 ## Example
-Definition:
 ```C++
 #include <thread>
 #include <future_queue.hpp>

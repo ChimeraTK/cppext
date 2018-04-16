@@ -1,5 +1,5 @@
 # future_queue
-A proof-of-concept implementation of a thread synchronisation primitive for C++. It can be described as a mixture of the concepts of futures and (lockfree) queues.
+A proof-of-concept implementation of a thread synchronisation primitive for C++ 11. It can be described as a mixture of the concepts of futures and (lockfree) queues.
 
 ## Features
 The future_queue is a thread-safe queue with the following features:

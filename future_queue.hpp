@@ -1,6 +1,8 @@
 #include <list>
 #include <atomic>
 #include <vector>
+#include <cassert>
+#include <map>
 
 #include "semaphore.hpp"
 

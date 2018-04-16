@@ -9,6 +9,7 @@ addons:
     packages:
       - cmake-data
       - cmake
+      - libboost-all-dev
 script:
     ############################################################################
     # Build main and tests

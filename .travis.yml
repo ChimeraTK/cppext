@@ -12,7 +12,6 @@ addons:
       - g++-5
       - cmake-data
       - cmake
-      - libboost1.58-all-dev
 
 before_install:
     - sudo add-apt-repository ppa:apokluda/boost1.53 -y

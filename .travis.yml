@@ -9,3 +9,13 @@ addons:
     packages:
       - cmake-data
       - cmake
+script:
+    ############################################################################
+    # Build main and tests
+    ############################################################################
+     - mkdir -p build
+     - cd build
+     - cmake -DCMAKE_BUILD_TYPE=Debug .. 
+     - make
+     - make test
+     - make coverage

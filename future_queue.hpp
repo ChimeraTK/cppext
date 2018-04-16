@@ -307,3 +307,10 @@ std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::r
 
     return notifyerQueue;
 }
+
+template<typename QUEUE_PTR_TYPE>
+std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::map<future_queue_base::id_t, QUEUE_PTR_TYPE> mapOfQueues) {
+    std::list<std::reference_wrapper<future_queue_base>> listOfQueues;
+    for(auto &pair : mapOfQueues) listOfQueues.push_back(*(pair.second));
+    return when_any(listOfQueues);
+}

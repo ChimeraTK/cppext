@@ -13,7 +13,7 @@ using namespace boost::unit_test_framework;
 #include "barrier.hpp"
 
 constexpr size_t queueLength = 1000;
-constexpr size_t nTransfers = 1e6;
+constexpr size_t nTransfers = 1e7;
 constexpr size_t nQueues = 10;        // only for when_any & related
 
 /*********************************************************************************************************************/
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(future_queue_spin_wait) {
 
     std::thread sender( [&theQueue] {
       for(size_t i=0; i<nTransfers; ++i) {
-        while(theQueue.push(i & 0xFFFF) == false) continue;
+        while(theQueue.push(i & 0xFFFF) == false) usleep(1);
       }
     } );    // end thread sender
 
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(boost_queue_spin_wait) {
 
     std::thread sender( [&theQueue] {
       for(size_t i=0; i<nTransfers; ++i) {
-        while(theQueue.push(i & 0xFFFF) == false) continue;
+        while(theQueue.push(i & 0xFFFF) == false) usleep(1);
       }
     } );    // end thread sender
 
@@ -139,7 +139,7 @@ BOOST_AUTO_TEST_CASE(boost_spsc_queue_spin_wait) {
 
     std::thread sender( [&theQueue] {
       for(size_t i=0; i<nTransfers; ++i) {
-        while(theQueue.push(i & 0xFFFF) == false) continue;
+        while(theQueue.push(i & 0xFFFF) == false) usleep(1);
       }
     } );    // end thread sender
 
@@ -169,7 +169,7 @@ BOOST_AUTO_TEST_CASE(future_queue_pop_wait) {
 
     std::thread sender( [&theQueue] {
       for(size_t i=0; i<nTransfers; ++i) {
-        while(theQueue.push(i & 0xFFFF) == false) continue;
+        while(theQueue.push(i & 0xFFFF) == false) usleep(1);
       }
     } );    // end thread sender
 
@@ -203,7 +203,7 @@ BOOST_AUTO_TEST_CASE(boost_spsc_queue_of_futures) {
       for(size_t i=0; i<nTransfers; ++i) {
         boost::promise<int32_t> newPromise;
         auto newFuture = newPromise.get_future().share();
-        while(theQueue.push(newFuture) == false) continue;
+        while(theQueue.push(newFuture) == false) usleep(1);
         thePromise.set_value(i & 0xFFFF);
         thePromise = std::move(newPromise);
       }

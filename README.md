@@ -55,6 +55,7 @@ Some ideas how the future_queue could be extended in future:
 
 ## Performance of the current implementation
 The results of the performance test delivered with this library is as follows (on a Intel(R) Core(TM) i5-2500 @ 3.30 GHz):
+
 | Implementation                                                                                       | Time per transfer |
 |---------------------------------------------------------------------------------------------------------------|---------:|
 |`boost::lockfree::queue` with spin-waiting `pop()`                                                             |  1.15 us |

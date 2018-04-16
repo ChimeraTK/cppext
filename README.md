@@ -57,15 +57,15 @@ Some ideas how the future_queue could be extended in future:
 The results of the performance test delivered with this library is as follows (on a Intel(R) Core(TM) i5-2500 @ 3.30 GHz):
 <table>
   <tr><th>Implementation</th><th>Time per transfer</th></tr>
-  <tr><td>boost::lockfree::queue with spin-waiting pop()</td><td>1.15 us</td></tr>
-  <tr><td>boost::lockfree::spsc_queue with spin-waiting pop()</td><td>0.20 us</td></tr>
-  <tr><td>future_queue with spin-waiting pop()</td><td>0.78 us</td></tr>
-  <tr><td>future_queue with pop_wait()</td><td>0.64 us</td></tr>
-  <tr><td>boost::lockfree::spsc_queue<boost::shared_future></td><td>3.90 us</td></tr>
-  <tr><td>future_queue with when_any (10 queues fed by each one thread)</td><td>1.36 us</td></tr>
-  <tr><td>future_queue with when_any (100 queues fed by each one thread)</td><td>1.42 us</td></tr>
-  <tr><td>boost::lockfree::spsc_queue<boost::shared_future> with wait_for_any (10 queues fed by each one thread)</td><td>11.23 us</td></tr>
-  <tr><td>boost::lockfree::spsc_queue<boost::shared_future> with wait_for_any (100 queues fed by each one thread)</td><td>75.06 us</td></tr>
+  <tr><td>`boost::lockfree::queue` with spin-waiting `pop()`</td><td>1.15 us</td></tr>
+  <tr><td>`boost::lockfree::spsc_queue` with spin-waiting `pop()`</td><td>0.20 us</td></tr>
+  <tr><td>`future_queue` with spin-waiting `pop()`</td><td>0.78 us</td></tr>
+  <tr><td>`future_queue` with `pop_wait()`</td><td>0.64 us</td></tr>
+  <tr><td>`boost::lockfree::spsc_queue<boost::shared_future>`</td><td>3.90 us</td></tr>
+  <tr><td>`future_queue` with `when_any()` (10 queues fed by each one thread)</td><td>1.36 us</td></tr>
+  <tr><td>`future_queue` with `when_any()` (100 queues fed by each one thread)</td><td>1.42 us</td></tr>
+  <tr><td>`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (10 queues fed by each one thread)</td><td>11.23 us</td></tr>
+  <tr><td>`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (100 queues fed by each one thread)</td><td>75.06 us</td></tr>
 </table>
 The queues were each 1000 elements long and the elements on the queue were of the type int32_t. The used compiler was a gcc 5.4.0 and the used BOOST version was 1.58. The operating system was Ubuntu 16.04.
 

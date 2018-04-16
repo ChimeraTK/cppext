@@ -1,9 +1,6 @@
-#include <thread>
-#include <iostream>
+#include <list>
 #include <atomic>
 #include <vector>
-#include <assert.h>
-#include <unistd.h>
 
 #include "semaphore.hpp"
 

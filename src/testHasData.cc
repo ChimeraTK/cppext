@@ -2,6 +2,7 @@
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
+#include <thread>
 #include "future_queue.hpp"
 
 #include "threadsafe_unit_test.hpp"

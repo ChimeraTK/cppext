@@ -277,7 +277,7 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(boost_spsc_queue_wait_for_any) {
-    std::cout << "Measure performance of boost::lockfree::spsc_queue<std::shared_future<T>> with wait_for_any" << std::endl;
+    std::cout << "Measure performance of boost::lockfree::spsc_queue<boost::shared_future<T>> with wait_for_any" << std::endl;
 
     static_assert(nTransfers % nQueues == 0, "nQueues must be an integer divider of nTransfers.");
 

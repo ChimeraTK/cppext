@@ -10,6 +10,42 @@ The future_queue is a thread-safe queue with the following features:
 * push_overwrite(): Overwrite the last element in the queue if the queue is full (only in single-producer context)
 * when_any(): get notified on new data in a given list of future_queues in a well-defined order
 
+## Example
+Definition:
+```C++
+#include <thread>
+#include <future_queue.hpp>
+#include <iostream>
+#include <unistd.h>
+
+// define future_queue of doubles with a length of 5
+future_queue<double> myQueue(5);
+
+// define function sending data in a separate thread
+void senderThread() {
+  for(size_t i=0; i<10; ++i) {
+    usleep(100000);             // wait 0.1 second
+    myQueue.push(i*3.14);
+  }
+}
+
+int main() {
+
+  // launch sender thread
+  std::thread myThread(&senderThread);
+
+  // receive 10 values and print them
+  for(size_t i=0; i<10; ++i) {
+    double value;
+    myQueue.pop_wait(value);                // wait until new data has arrived
+    std::cout << value << std::endl;
+  }
+  
+  myThread.join();
+  return 0;
+}
+```
+
 ## Possible extensions
 Some ideas how the future_queue could be extended in future:
 * Continuations as an analogy to continuations in futures. Execute a function/lambda for each new value in the queue and push its result into a new queue. Might have different execution policies like async (function/lambda runs in separate thread) or lazy (function/lambda runs inside the pop() of the resulting queue).

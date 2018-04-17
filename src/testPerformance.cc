@@ -13,8 +13,9 @@ using namespace boost::unit_test_framework;
 #include "barrier.hpp"
 
 constexpr size_t queueLength = 1000;
-constexpr size_t nTransfers = 1e5;
+constexpr size_t nTransfers = 1e6;
 constexpr size_t nQueues = 10;        // only for when_any & related
+constexpr bool compareWithBoost = false;
 
 /*********************************************************************************************************************/
 
@@ -102,6 +103,10 @@ BOOST_AUTO_TEST_CASE(future_queue_spin_wait) {
 
 BOOST_AUTO_TEST_CASE(boost_queue_spin_wait) {
     std::cout << "Measure performance of boost::lockfree::queue" << std::endl;
+    if(!compareWithBoost) {
+      std::cout << " -> skipped." << std::endl;
+      return;
+    }
 
     boost::lockfree::queue<int32_t> theQueue(queueLength);
 
@@ -132,6 +137,10 @@ BOOST_AUTO_TEST_CASE(boost_queue_spin_wait) {
 
 BOOST_AUTO_TEST_CASE(boost_spsc_queue_spin_wait) {
     std::cout << "Measure performance of boost::lockfree::spsc_queue" << std::endl;
+    if(!compareWithBoost) {
+      std::cout << " -> skipped." << std::endl;
+      return;
+    }
 
     boost::lockfree::spsc_queue<int32_t> theQueue(queueLength);
 
@@ -192,6 +201,10 @@ BOOST_AUTO_TEST_CASE(future_queue_pop_wait) {
 
 BOOST_AUTO_TEST_CASE(boost_spsc_queue_of_futures) {
     std::cout << "Measure performance of boost::lockfree::spsc_queue<std::shared_future<T>>" << std::endl;
+    if(!compareWithBoost) {
+      std::cout << " -> skipped." << std::endl;
+      return;
+    }
 
     boost::lockfree::spsc_queue<boost::shared_future<int32_t>> theQueue(queueLength);
     boost::promise<int32_t> thePromise;
@@ -278,6 +291,10 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
 
 BOOST_AUTO_TEST_CASE(boost_spsc_queue_wait_for_any) {
     std::cout << "Measure performance of boost::lockfree::spsc_queue<boost::shared_future<T>> with wait_for_any" << std::endl;
+    if(!compareWithBoost) {
+      std::cout << " -> skipped." << std::endl;
+      return;
+    }
 
     static_assert(nTransfers % nQueues == 0, "nQueues must be an integer divider of nTransfers.");
 

@@ -85,7 +85,8 @@ class future_queue_base {
       writeIndex(0),
       readIndexMax(0),
       readIndex(0),
-      hasFrontOwnership(false)
+      hasFrontOwnership(false),
+      notifyerQueue_previousData(0)
     {}
 
     // process-unique id_t of this queue
@@ -140,6 +141,9 @@ class future_queue_base {
     // Pointer to notification queue used to realise a wait_any logic.
     std::shared_ptr<future_queue<id_t>> notifyerQueue;
 
+    // counter for the number of elements in the queue before when_any has added the notifyerQueue
+    std::atomic<size_t> notifyerQueue_previousData;
+
     friend std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
 
   private:
@@ -184,6 +188,9 @@ class future_queue : public future_queue_base {
         (void)nret;
         assert(nret == true);
       }
+      else {
+        notifyerQueue_previousData++;
+      }
       return true;
     }
     bool push(const T& t) {
@@ -216,7 +223,14 @@ class future_queue : public future_queue_base {
       // send notification if requested and if data wasn't overwritten
       if(ret) {
         auto notify = std::atomic_load(&notifyerQueue);
-        if(notify) notify->push(get_id());
+        if(notify) {
+          bool nret = notify->push(get_id());
+          (void)nret;
+          assert(nret == true);
+        }
+        else {
+          notifyerQueue_previousData++;
+        }
       }
       return ret;
     }
@@ -230,6 +244,7 @@ class future_queue : public future_queue_base {
         t = std::move(buffers[readIndex%nBuffers]);
         assert(readIndex < writeIndex);
         readIndex++;
+        notifyerQueue_previousData--;
         hasFrontOwnership = false;
         return true;
       }
@@ -255,6 +270,7 @@ class future_queue : public future_queue_base {
       t = std::move(buffers[readIndex%nBuffers]);
       assert(readIndex < writeIndex);
       readIndex++;
+      notifyerQueue_previousData--;
     }
 
     // Pop object off the queue and discard it. This function will block until data is available.
@@ -295,6 +311,9 @@ class future_queue : public future_queue_base {
 // push_overwrite() might appear in the notification queue before the value can be retrieve from the data queue. It is
 // therefore recommended to use pop_wait() to retrieve the values from the data queues if push_overwrite() is used.
 // Otherwise failed pop() have to be retried until the data is received.
+//
+// If data is already available in the queues before calling when_any, the appropriate number of notifications are
+// placed in the notifyer queue in arbitrary order.
 std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
 
     // Add lengthes of all queues - this will be the length of the notification queue
@@ -305,7 +324,12 @@ std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::r
     auto notifyerQueue = std::make_shared<future_queue<future_queue_base::id_t>>(summedLength);
 
     // Distribute the pointer to the notification queue to all participating queues
-    for(auto &queue : listOfQueues) std::atomic_store(&(queue.get().notifyerQueue), notifyerQueue);
+    for(auto &queue : listOfQueues) {
+      std::atomic_store(&(queue.get().notifyerQueue), notifyerQueue);
+      // at this point, queue.get().notifyerQueue_previousData will no longer be modified by the sender side
+      size_t nPreviousValues = queue.get().notifyerQueue_previousData;
+      for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue->push(queue.get().get_id());
+    }
 
     return notifyerQueue;
 }

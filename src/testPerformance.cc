@@ -13,7 +13,7 @@ using namespace boost::unit_test_framework;
 #include "barrier.hpp"
 
 constexpr size_t queueLength = 1000;
-constexpr size_t nTransfers = 1e7;
+constexpr size_t nTransfers = 1e5;
 constexpr size_t nQueues = 10;        // only for when_any & related
 
 /*********************************************************************************************************************/

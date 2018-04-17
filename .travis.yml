@@ -20,9 +20,9 @@ before_install:
 install:
     - sudo apt-get install libboost1.67-dev
 
-env:
-    - CC=gcc-5
-    - CXX=g++-5
+
+
+
 
 script:
     ############################################################################
@@ -30,6 +30,8 @@ script:
     ############################################################################
      - mkdir -p build
      - cd build
+     - export CC=gcc-5
+     - export CXX=g++-5
      - cmake -DCMAKE_BUILD_TYPE=Debug .. 
      - make
      - make test

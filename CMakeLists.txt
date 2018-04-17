@@ -2,7 +2,7 @@ project(future_queue_tests)
 cmake_minimum_required(VERSION 2.8)
 
 # find BOOST libraries
-find_package(Boost COMPONENTS unit_test_framework thread REQUIRED)
+find_package(Boost COMPONENTS unit_test_framework system thread REQUIRED)
 find_package (Threads REQUIRED)
 
 # Moderate version of the compiler flags

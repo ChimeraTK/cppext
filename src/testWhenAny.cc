@@ -22,7 +22,7 @@ constexpr int MovableDataType::undef;
 
 /*********************************************************************************************************************/
 
-BOOST_AUTO_TEST_CASE(singleThreaded) {
+BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part of the stresstest
 
     // test up to 100 queues up to a queue length of 100
     for(size_t length=2; length<=10; ++length) {

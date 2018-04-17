@@ -1,3 +1,11 @@
+/**********************************************************************************************************************
+ *
+ * VERY IMPORTANT NOTE!
+ *
+ * Whenever this file is changed, please update the example in the README.md file as well!
+ *
+ *********************************************************************************************************************/
+
 #include <thread>
 #include <future_queue.hpp>
 #include <iostream>
@@ -25,7 +33,7 @@ int main() {
     myQueue.pop_wait(value);                // wait until new data has arrived
     std::cout << value << std::endl;
   }
-  
+
   myThread.join();
   return 0;
 }

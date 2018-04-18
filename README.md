@@ -67,7 +67,7 @@ The results of the performance test delivered with this library is as follows (o
 | **Comparison with boost::lockfree based implementations**                                                     |          |
 |`boost::lockfree::queue` with spin-waiting `pop()`                                                             |  1.15 us |
 |`boost::lockfree::spsc_queue` with spin-waiting `pop()`                                                        |  0.20 us |
-|`boost::lockfree::spsc_queue<boost::shared_future>`                                                            |  3.90 us |
+|`boost::lockfree::spsc_queue<boost::shared_future>` (equivalent to `future_queue::pop_wait()`)                 |  3.90 us |
 |`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (10 queues fed by each one thread)   | 11.23 us |
 |`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (100 queues fed by each one thread)  | 75.06 us |
 

@@ -27,6 +27,7 @@ class semaphore {
     semaphore() {
       // create new semaphore which is not shared it between processes
       int ret = sem_init(&sem, 0, 0);
+      (void)ret;
       assert(ret == 0);
     }
 
@@ -39,10 +40,12 @@ class semaphore {
      *  will be unblocked. Calling unlock() on a semaphore which is already ready is not allowed. */
     void unlock() {
       int ret = sem_post(&sem);
+      (void)ret;
       assert(ret == 0);
       // safety check against misuse
       int value;
       ret = sem_getvalue(&sem, &value);
+      (void)ret;
       assert(ret == 0);
       assert(value <= 1);
     }
@@ -51,6 +54,7 @@ class semaphore {
     bool is_ready() {
       int value;
       int ret = sem_getvalue(&sem, &value);
+      (void)ret;
       assert(ret == 0);
       return value > 0;
     }
@@ -61,6 +65,7 @@ class semaphore {
      *  will unblock. */
     void wait_and_reset() {
       int ret = sem_wait(&sem);
+      (void)ret;
       assert(ret == 0);
     }
 

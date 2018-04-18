@@ -9,11 +9,11 @@ find_package (Threads REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -fPIC -Wextra -Wuninitialized")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -fno-inline")
 
-include_directories(${CMAKE_SOURCE_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/include)
 
 enable_testing()
 
-aux_source_directory(${CMAKE_SOURCE_DIR}/src testExecutables)
+aux_source_directory(${CMAKE_SOURCE_DIR}/tests testExecutables)
 foreach( testExecutableSrcFile ${testExecutables})
   #NAME_WE means the base name without path and (longest) extension
   get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
@@ -24,5 +24,3 @@ endforeach( testExecutableSrcFile )
 
 # enable code coverate report
 include(cmake/enable_code_coverage_report.cmake)
-
-

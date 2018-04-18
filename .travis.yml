@@ -22,22 +22,15 @@ matrix:
        env: MYCC=clang-37 MYCXX=clang++-37 GCOV=llvm-cov
 
 before_install:
-     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then 
-         sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-         sudo add-apt-repository -y ppa:mhier/libboost-latest
-         sudo apt-get update
-       else
-         brew tap homebrew/versions
-         brew update
-       fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo add-apt-repository -y ppa:mhier/libboost-latest ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo apt-get update ; fi
+     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew tap homebrew/versions ; fi
+     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update ; fi
 
 install:
-     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then 
-         sudo apt-get install libboost1.67-dev cmake lcov
-         sudo apt-get install ${PKG}
-       else
-         brew install llvm37
-       fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo apt-get install libboost1.67-dev cmake lcov ${PKG} ; fi
+     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install llvm37 ; fi
     
 script:
     ############################################################################

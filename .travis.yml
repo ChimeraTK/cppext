@@ -1,25 +1,34 @@
 language: cpp
 
-os: linux
-sudo: true
-dist: trusty
-
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - g++-5
-      - cmake-data
-      - cmake
-      - lcov
+matrix:
+   include:
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=gcc-5 MYCXX=g++-5 GCOV=gcov-5 PKG=g++-5
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=gcc-6 MYCXX=g++-6 GCOV=gcov-6 PKG=g++-6
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=gcc-7 MYCXX=g++-7 GCOV=gcov-7 PKG=g++-7
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=clang-3.5 MYCXX=clang++-3.5 GCOV=llvm-cov PKG="clang-3.5 llvm"
+     - os: osx
+       osx_image: xcode9.3
+       env: MYCC=clang MYCXX=clang++ GCOV=llvm-cov
 
 before_install:
-    - sudo add-apt-repository -y ppa:mhier/libboost-latest
-    - sudo apt-get update
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo add-apt-repository -y ppa:mhier/libboost-latest ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo apt-get update ; fi
 
 install:
-    - sudo apt-get install libboost1.67-dev
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo apt-get install libboost1.67-dev cmake lcov ${PKG} ; fi
     
 script:
     ############################################################################
@@ -27,8 +36,12 @@ script:
     ############################################################################
      - mkdir -p build
      - cd build
-     - export CC=gcc-5
-     - export CXX=g++-5
+     - export CC=${MYCC}
+     - export CXX=${MYCXX}
+     - which $CC
+     - which $CXX
+     - $CC --version
+     - $CXX --version
      - cmake -DCMAKE_BUILD_TYPE=Debug .. 
      - make
      - make test
@@ -36,8 +49,8 @@ script:
 after_success:
      # Creating report
      - cd ${TRAVIS_BUILD_DIR}
-     - lcov --directory . --capture --output-file coverage.info # capture coverage info
-     - lcov --remove coverage.info '/usr/*' --output-file coverage.info # filter out system
-     - lcov --list coverage.info #debug info
+     - lcov --gcov-tool ${GCOV} --directory . --capture --output-file coverage.info # capture coverage info
+     - lcov --gcov-tool ${GCOV} --remove coverage.info '/usr/*' --output-file coverage.info # filter out system
+     - lcov --gcov-tool ${GCOV} --list coverage.info #debug info
      # Uploading report to CodeCov
      - bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"

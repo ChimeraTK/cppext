@@ -6,7 +6,7 @@ A proof-of-concept implementation of a thread synchronisation primitive for C++ 
 
 ## Features
 The future_queue is a thread-safe queue with the following features:
-* Lockfree: all operations like push() and pop() are lockfree. Only exception: pop_wait().
+* Lockfree: all operations like push() and pop() are lockfree. Only exception: a call to pop_wait() on an empty queue.
 * pop_wait(): block the calling thread until there is data available on the queue.
 * Multi producer: push() may be called from different threads concurrently on the same queue
 * Single consumer: pop()/pop_wait() may only be called from a single thread at the same time

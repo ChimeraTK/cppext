@@ -1,25 +1,25 @@
 language: cpp
 
-os: linux
+os:
+ - linux
+ - osx
 sudo: true
 dist: trusty
 
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - g++-5
-      - cmake-data
-      - cmake
-      - lcov
+env:
+  - CC=gcc-5 CXX=g++-5 GCOV=gcov-5 PKG=g++-5
+  - CC=gcc-6 CXX=g++-6 GCOV=gcov-6 PKG=g++-6
+  - CC=gcc-7 CXX=g++-7 GCOV=gcov-7 PKG=g++-7
+  - CC=clang CXX=clang++ GCOV=llvm-cov PKG="clang llvm"
 
 before_install:
+    - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
     - sudo add-apt-repository -y ppa:mhier/libboost-latest
     - sudo apt-get update
 
 install:
-    - sudo apt-get install libboost1.67-dev
+    - sudo apt-get install libboost1.67-dev cmake lcov
+    - sudo apt-get install ${PKG}
     
 script:
     ############################################################################
@@ -27,8 +27,6 @@ script:
     ############################################################################
      - mkdir -p build
      - cd build
-     - export CC=gcc-5
-     - export CXX=g++-5
      - cmake -DCMAKE_BUILD_TYPE=Debug .. 
      - make
      - make test
@@ -36,8 +34,8 @@ script:
 after_success:
      # Creating report
      - cd ${TRAVIS_BUILD_DIR}
-     - lcov --directory . --capture --output-file coverage.info # capture coverage info
-     - lcov --remove coverage.info '/usr/*' --output-file coverage.info # filter out system
-     - lcov --list coverage.info #debug info
+     - lcov --gcov-tool ${GCOV} --directory . --capture --output-file coverage.info # capture coverage info
+     - lcov --gcov-tool ${GCOV} --remove coverage.info '/usr/*' --output-file coverage.info # filter out system
+     - lcov --gcov-tool ${GCOV} --list coverage.info #debug info
      # Uploading report to CodeCov
      - bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"

@@ -1,25 +1,43 @@
 language: cpp
 
-os:
- - linux
- - osx
-sudo: true
-dist: trusty
-
-env:
-  - CC=gcc-5 CXX=g++-5 GCOV=gcov-5 PKG=g++-5
-  - CC=gcc-6 CXX=g++-6 GCOV=gcov-6 PKG=g++-6
-  - CC=gcc-7 CXX=g++-7 GCOV=gcov-7 PKG=g++-7
-  - CC=clang CXX=clang++ GCOV=llvm-cov PKG="clang llvm"
+matrix:
+   include:
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=gcc-5 MYCXX=g++-5 GCOV=gcov-5 PKG=g++-5
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=gcc-6 MYCXX=g++-6 GCOV=gcov-6 PKG=g++-6
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=gcc-7 MYCXX=g++-7 GCOV=gcov-7 PKG=g++-7
+     - os: linux
+       sudo: required
+       dist: trusty
+       env: MYCC=clang MYCXX=clang++ GCOV=llvm-cov PKG="clang llvm"
+     - os: osx
+       env: MYCC=clang-37 MYCXX=clang++-37 GCOV=llvm-cov
 
 before_install:
-    - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-    - sudo add-apt-repository -y ppa:mhier/libboost-latest
-    - sudo apt-get update
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then 
+     -   sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+     -   sudo add-apt-repository -y ppa:mhier/libboost-latest
+     -   sudo apt-get update
+     - else
+     -   brew tap homebrew/versions
+     -   brew update
+     - fi
 
 install:
-    - sudo apt-get install libboost1.67-dev cmake lcov
-    - sudo apt-get install ${PKG}
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then 
+     -   sudo apt-get install libboost1.67-dev cmake lcov
+     -   sudo apt-get install ${PKG}
+     - else
+     -   brew install llvm37
+     - fi
     
 script:
     ############################################################################
@@ -27,6 +45,12 @@ script:
     ############################################################################
      - mkdir -p build
      - cd build
+     - export CC=${MYCC}
+     - export CXX=${MYCXX}
+     - which $CC
+     - which $CXX
+     - $CC --version
+     - $CXX --version
      - cmake -DCMAKE_BUILD_TYPE=Debug .. 
      - make
      - make test

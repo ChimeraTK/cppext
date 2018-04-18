@@ -51,9 +51,9 @@ before_install:
      - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test ; fi
      - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo add-apt-repository -y ppa:mhier/libboost-latest ; fi
      - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - ; fi
-     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo bash -c "echo deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty main >> " /etc/apt/sources.list ; fi
-     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo bash -c "echo deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-5.0 main >> " /etc/apt/sources.list ; fi
-     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo bash -c "echo deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-6.0 main >> " /etc/apt/sources.list ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo bash -c "echo deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty main >> /etc/apt/sources.list" ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo bash -c "echo deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-5.0 main >> /etc/apt/sources.list" ; fi
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo bash -c "echo deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-6.0 main >> /etc/apt/sources.list" ; fi
      - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then sudo apt-get update ; fi
 
 install:

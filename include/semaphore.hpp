@@ -1,4 +1,11 @@
+#ifndef FUTURE_QUEUE_SEMAPHORE_HPP
+#define FUTURE_QUEUE_SEMAPHORE_HPP
+
+#ifdef __linux__
 #include <features.h>
+#endif
+
+#include <cassert>
 
 /*
  * Two implementations: one is based on the posix semaphore (sem_wait etc.), the other is pure C++ 11. The posix
@@ -20,7 +27,7 @@ class semaphore {
     semaphore() {
       // create new semaphore which is not shared it between processes
       int ret = sem_init(&sem, 0, 0);
-      if(ret != 0) throw;
+      assert(ret == 0);
     }
 
     /** Destroy semaphore. No other thread must be waiting on this semaphore when the destructor is called. */
@@ -32,11 +39,11 @@ class semaphore {
      *  will be unblocked. Calling unlock() on a semaphore which is already ready is not allowed. */
     void unlock() {
       int ret = sem_post(&sem);
-      if(ret != 0) throw;
+      assert(ret == 0);
       // safety check against misuse
       int value;
       ret = sem_getvalue(&sem, &value);
-      if(ret != 0) throw;
+      assert(ret == 0);
       assert(value <= 1);
     }
 
@@ -44,7 +51,7 @@ class semaphore {
     bool is_ready() {
       int value;
       int ret = sem_getvalue(&sem, &value);
-      if(ret != 0) throw;
+      assert(ret == 0);
       return value > 0;
     }
 
@@ -54,7 +61,7 @@ class semaphore {
      *  will unblock. */
     void wait_and_reset() {
       int ret = sem_wait(&sem);
-      if(ret != 0) throw;
+      assert(ret == 0);
     }
 
     /** Check if the semaphore is ready. If not, return false immediately. If yes, atomically lock the semaphore and
@@ -66,7 +73,7 @@ class semaphore {
           return false;
         }
         else {
-          throw;
+          assert(false);
         }
       }
       return true;
@@ -134,4 +141,6 @@ class semaphore {
 
 };
 
-#endif
+#endif // POSIX feature switch
+
+#endif // FUTURE_QUEUE_SEMAPHORE_HPP

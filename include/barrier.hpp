@@ -1,3 +1,5 @@
+#ifndef FUTURE_QUEUE_BARRIER_HPP
+#define FUTURE_QUEUE_BARRIER_HPP
 
 #include <mutex>
 #include <condition_variable>
@@ -42,3 +44,4 @@ class barrier {
 
 };
 
+#endif // FUTURE_QUEUE_BARRIER_HPP

@@ -6,6 +6,7 @@
 #endif
 
 #include <cassert>
+#include <system_error>
 
 /*
  * Two implementations: one is based on the posix semaphore (sem_wait etc.), the other is pure C++ 11. The posix
@@ -27,8 +28,7 @@ class semaphore {
     semaphore() {
       // create new semaphore which is not shared it between processes
       int ret = sem_init(&sem, 0, 0);
-      (void)ret;
-      assert(ret == 0);
+      if(ret != 0) throw std::system_error(std::error_code(errno, std::generic_category()));
     }
 
     /** Destroy semaphore. No other thread must be waiting on this semaphore when the destructor is called. */
@@ -40,22 +40,18 @@ class semaphore {
      *  will be unblocked. Calling unlock() on a semaphore which is already ready is not allowed. */
     void unlock() {
       int ret = sem_post(&sem);
-      (void)ret;
-      assert(ret == 0);
+      if(ret != 0) throw std::system_error(std::error_code(errno, std::generic_category()));
       // safety check against misuse
       int value;
       ret = sem_getvalue(&sem, &value);
-      (void)ret;
-      assert(ret == 0);
-      assert(value <= 1);
+      if(ret != 0 || value > 1) throw std::system_error(std::error_code(errno, std::generic_category()));
     }
 
     /** Check if the semaphore is currently ready. Does not block or alter the state of the semaphore. */
     bool is_ready() {
       int value;
       int ret = sem_getvalue(&sem, &value);
-      (void)ret;
-      assert(ret == 0);
+      if(ret != 0) throw std::system_error(std::error_code(errno, std::generic_category()));
       return value > 0;
     }
 
@@ -65,8 +61,7 @@ class semaphore {
      *  will unblock. */
     void wait_and_reset() {
       int ret = sem_wait(&sem);
-      (void)ret;
-      assert(ret == 0);
+      if(ret != 0) throw std::system_error(std::error_code(errno, std::generic_category()));
     }
 
     /** Check if the semaphore is ready. If not, return false immediately. If yes, atomically lock the semaphore and
@@ -74,12 +69,8 @@ class semaphore {
     bool is_ready_and_reset() {
       int ret = sem_trywait(&sem);
       if(ret != 0) {
-        if(errno == EAGAIN) {
-          return false;
-        }
-        else {
-          assert(false);
-        }
+        if(errno != EAGAIN) throw std::system_error(std::error_code(errno, std::generic_category()));
+        return false;
       }
       return true;
     }

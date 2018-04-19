@@ -83,4 +83,4 @@ after_success:
      - lcov --gcov-tool ${GCOV} --remove coverage.info 'tests/*' --output-file coverage.info # filter out tests
      - lcov --gcov-tool ${GCOV} --list coverage.info #debug info
      # Uploading report to CodeCov
-     - bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"
+     - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports" ; fi

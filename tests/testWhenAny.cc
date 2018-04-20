@@ -29,14 +29,12 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
       for(size_t nqueues=1; nqueues<=10; ++nqueues) {
 
         std::list<future_queue<MovableDataType>> q;
-        std::list<std::reference_wrapper<future_queue_base>> qref;
         for(size_t iq=0; iq<nqueues; ++iq) {
           q.emplace_back(length);
-          qref.emplace_back(q.back());
         }
 
         // create notification queue
-        auto nq = when_any(qref);
+        auto nq = when_any(q);
 
         // write once to a single queue and find the change with wait_any
         size_t iq=0;
@@ -106,52 +104,42 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
     for(size_t length=2; length<=10; ++length) {
       for(size_t nqueues=1; nqueues<=10; ++nqueues) {
 
-        std::list<future_queue<MovableDataType>> q;
-        std::list<std::reference_wrapper<future_queue_base>> qref;
-        for(size_t iq=0; iq<nqueues; ++iq) {
-          q.emplace_back(length);
-          qref.emplace_back(q.back());
-        }
+        std::vector<future_queue<MovableDataType>> q;
+        for(size_t iq=0; iq<nqueues; ++iq) q.emplace_back(length);
 
         // write once to a single queue
-        size_t iq=0;
-        for(auto &theQ : q) {
-          ++iq;
+        for(size_t iq=0; iq<nqueues; ++iq) {
           for(size_t i=0; i<iq; ++i) {      // note: writes might get rejected since the queue is too short
             MovableDataType value( length*nqueues + iq + 3*i );
             if(iq % 2 == 0) {
-              theQ.push_overwrite(std::move(value));
+              q[iq].push_overwrite(std::move(value));
             }
             else {
-              theQ.push(std::move(value));
+              q[iq].push(std::move(value));
             }
           }
         }
 
         // create notification queue
-        auto nq = when_any(qref);
+        auto nq = when_any(q);
 
         // find the previously written data with wait_any
-        iq=0;
-        for(auto &theQ : q) {
-          for(size_t i=0; i<std::min(iq+1,length); ++i) {   // only check until length of the queue
+        for(size_t iq=0; iq<nqueues; ++iq) {
+          for(size_t i=0; i<std::min(iq,length); ++i) {   // only check until length of the queue
             size_t id;
             BOOST_CHECK( nq->pop(id) );
             BOOST_CHECK( id == iq );
             MovableDataType readValue;
-            BOOST_CHECK( theQ.pop(readValue) );
+            BOOST_CHECK( q[iq].pop(readValue) );
             // don't compare the value since in case of push_overwrite this gets complicated...
           }
-          ++iq;
         }
 
         // write a mixed sequece to the queues and check that the order is properly reflected in the notification queue
         for(size_t i=0; i<length; ++i) {
-          iq=0;
-          for(auto &theQ : q) {
+          for(size_t iq=0; iq<nqueues; ++iq) {
             MovableDataType value( length*nqueues + i + iq );
-            BOOST_CHECK( theQ.push(std::move(value)) );
-            ++iq;
+            BOOST_CHECK( q[iq].push(std::move(value)) );
           }
         }
         // all queues are now full, now overwrite the last written value in the first queue
@@ -161,20 +149,18 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
         }
         // check notifications in the notification queue (the overwrite in the first queue is not visible there!)
         for(size_t i=0; i<length; ++i) {
-          iq=0;
-          for(auto &theQ : q) {
+          for(size_t iq=0; iq<nqueues; ++iq) {
             size_t id;
             nq->pop_wait(id);
             BOOST_CHECK( id == iq );
             MovableDataType readValue;
-            BOOST_CHECK( theQ.pop(readValue) );
+            BOOST_CHECK( q[iq].pop(readValue) );
             if(i < length - 1 || iq > 0) {
               BOOST_CHECK_EQUAL( readValue.value(), length*nqueues + i + iq );
             }
             else {
               BOOST_CHECK_EQUAL( readValue.value(), 42 );    // was overwritten!
             }
-            ++iq;
           }
         }
 

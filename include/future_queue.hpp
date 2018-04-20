@@ -133,7 +133,8 @@ class future_queue_base {
     std::shared_ptr<shared_state_base> d_ptr;
     shared_state_base *d;
 
-    friend std::shared_ptr<future_queue<size_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
+    template<typename ITERABLE_TYPE>
+    friend std::shared_ptr<future_queue<size_t>> when_any(ITERABLE_TYPE listOfQueues);
 
 };
 
@@ -305,11 +306,12 @@ class future_queue : public future_queue_base {
 //
 // If data is already available in the queues before calling when_any, the appropriate number of notifications are
 // placed in the notifyer queue in arbitrary order.
-std::shared_ptr<future_queue<size_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
+template<typename ITERABLE_TYPE>
+std::shared_ptr<future_queue<size_t>> when_any(ITERABLE_TYPE listOfQueues) {
 
     // Add lengthes of all queues - this will be the length of the notification queue
     size_t summedLength = 0;
-    for(auto &queue : listOfQueues) summedLength += queue.get().size();
+    for(auto &queue : listOfQueues) summedLength += queue.size();
 
     // Create a notification queue in a shared pointer, so we can hand it on to the queues
     auto notifyerQueue = std::make_shared<future_queue<size_t>>(summedLength);
@@ -317,22 +319,15 @@ std::shared_ptr<future_queue<size_t>> when_any(std::list<std::reference_wrapper<
     // Distribute the pointer to the notification queue to all participating queues
     size_t index = 0;
     for(auto &queue : listOfQueues) {
-      std::atomic_store(&(queue.get().d->notifyerQueue), notifyerQueue);
-      // at this point, queue.get().notifyerQueue_previousData will no longer be modified by the sender side
-      size_t nPreviousValues = queue.get().d->notifyerQueue_previousData;
-      queue.get().d->when_any_index = index;
+      std::atomic_store(&(queue.d->notifyerQueue), notifyerQueue);
+      // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
+      size_t nPreviousValues = queue.d->notifyerQueue_previousData;
+      queue.d->when_any_index = index;
       for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue->push(index);
       ++index;
     }
 
     return notifyerQueue;
-}
-
-template<typename QUEUE_PTR_TYPE>
-std::shared_ptr<future_queue<size_t>> when_any(std::map<size_t, QUEUE_PTR_TYPE> mapOfQueues) {
-    std::list<std::reference_wrapper<future_queue_base>> listOfQueues;
-    for(auto &pair : mapOfQueues) listOfQueues.push_back(*(pair.second));
-    return when_any(listOfQueues);
 }
 
 #endif // FUTURE_QUEUE_HPP

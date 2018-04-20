@@ -42,81 +42,25 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     // list of threads so we can collect them later
     std::list<boost::thread> senderThreads, receiverThreads;
 
-    // launch receiver threads. They should come first, since when_any() should be executed before the senders start sending.
-    auto qit = qlist.begin();
-    for(size_t i=0; i<nReceivers; ++i) {
-
-      // build list of queues and next values to send
-      std::vector<int> nextValues;
-      std::vector<std::reference_wrapper<future_queue<int>>> myqueues;
-      std::list<std::reference_wrapper<future_queue_base>> myqueues2;
-      std::map<size_t, std::reference_wrapper<future_queue<int>>> myqueuemap;
-      std::map<size_t, int> nextValues2;
-      for(size_t k=0; k<nQueuesPerReceiver; ++k) {
-        myqueues.emplace_back(*qit);
-        myqueues2.emplace_back(*qit);
-        nextValues.push_back(0);
-        myqueuemap.emplace(k, *qit);
-        nextValues2[k] = 0;
-        ++qit;
-      }
-
-      int type = i % 2;       // alternate the different receiver types
-      if(type == 0) {         // first type: go through all queues and wait on each once
-        receiverThreads.emplace_back( [nextValues, myqueues, &shutdownReceivers] () mutable {
-          // 'endless' loop to send data
-          while(!shutdownReceivers) {
-            for(size_t k=0; k<nQueuesPerReceiver; ++k) {
-              int value;
-              myqueues[k].get().pop_wait(value);
-              assert(value == nextValues[k]);
-              ++nextValues[k];
-            }
-          }
-        } );  // end receiver thread for first type
-      }
-      else if(type == 1) {         // second type: use when_any
-        // obtain notification queue
-        auto notifyer = when_any(myqueues2);
-        // launch the thread
-        receiverThreads.emplace_back( [nextValues2, notifyer, myqueuemap, &shutdownReceivers] () mutable {
-          // 'endless' loop to send data
-          while(!shutdownReceivers) {
-            size_t id;
-            notifyer->pop_wait(id);
-            int value;
-            assert(myqueuemap.at(id).get().has_data());
-            bool ret = myqueuemap.at(id).get().pop(value);
-            (void)ret;
-            assert(ret);
-            assert(value == nextValues2.at(id));
-            ++nextValues2.at(id);
-          }
-        } );  // end receiver thread for first type
-      }
-    }
-    assert(qit == qlist.end());
-
     // launch sender threads
-    qit = qlist.begin();
+    auto qit = qlist.begin();
     for(size_t i=0; i<nSenders; ++i) {
 
-      // build list of queues and next values to send
-      std::vector<int> nextValues;
-      std::vector<std::reference_wrapper<future_queue<int>>> myqueues;
+      // build list of queues
+      std::vector<future_queue<int>> myqueues;
       for(size_t k=0; k<nQueuesPerSender; ++k) {
         myqueues.emplace_back(*qit);
         ++qit;
-        nextValues.push_back(0);
       }
 
-      senderThreads.emplace_back( [nextValues, myqueues, &shutdownSenders] () mutable {
-        //std::cout << "Launching sender..." << std::endl;
+      senderThreads.emplace_back( [myqueues, &shutdownSenders] () mutable {
+        std::vector<int> nextValues;
+        for(size_t i=0; i<myqueues.size(); ++i) nextValues.push_back(0);
         // 'endless' loop to send data
         std::vector<size_t> consequtive_fails(nQueuesPerSender);
         while(!shutdownSenders) {
           for(size_t k=0; k<nQueuesPerSender; ++k) {
-            bool success = myqueues[k].get().push(nextValues[k]);
+            bool success = myqueues[k].push(nextValues[k]);
             if(success) {
               ++nextValues[k];
               consequtive_fails[k] = 0;
@@ -129,9 +73,59 @@ BOOST_AUTO_TEST_CASE(stresstest) {
           }
         }
         // send one more value before shutting down, so the receiving side does not hang
-        for(size_t k=0; k<nQueuesPerSender; ++k) myqueues[k].get().push(nextValues[k]);
-        //std::cout << "Terminating sender..." << std::endl;
+        for(size_t k=0; k<nQueuesPerSender; ++k) myqueues[k].push(nextValues[k]);
       } );  // end sender thread
+    }
+    assert(qit == qlist.end());
+
+    // launch receiver threads
+    qit = qlist.begin();
+    for(size_t i=0; i<nReceivers; ++i) {
+
+      // build list of queues and next values to send
+      std::vector<future_queue<int>> myqueues;
+      for(size_t k=0; k<nQueuesPerReceiver; ++k) {
+        myqueues.emplace_back(*qit);
+        ++qit;
+      }
+
+      int type = i % 2;       // alternate the different receiver types
+      if(type == 0) {         // first type: go through all queues and wait on each once
+        receiverThreads.emplace_back( [myqueues, &shutdownReceivers] () mutable {
+          std::vector<int> nextValues;
+          for(size_t i=0; i<myqueues.size(); ++i) nextValues.push_back(0);
+          // 'endless' loop to send data
+          while(!shutdownReceivers) {
+            for(size_t k=0; k<nQueuesPerReceiver; ++k) {
+              int value;
+              myqueues[k].pop_wait(value);
+              assert(value == nextValues[k]);
+              ++nextValues[k];
+            }
+          }
+        } );  // end receiver thread for first type
+      }
+      else if(type == 1) {         // second type: use when_any
+        // launch the thread
+        receiverThreads.emplace_back( [myqueues, &shutdownReceivers] () mutable {
+          std::vector<int> nextValues;
+          for(size_t i=0; i<myqueues.size(); ++i) nextValues.push_back(0);
+          // obtain notification queue
+          auto notifyer = when_any(myqueues);
+          // 'endless' loop to send data
+          while(!shutdownReceivers) {
+            size_t id;
+            notifyer->pop_wait(id);
+            int value;
+            assert(myqueues[id].has_data());
+            bool ret = myqueues[id].pop(value);
+            (void)ret;
+            assert(ret);
+            assert(value == nextValues[id]);
+            ++nextValues[id];
+          }
+        } );  // end receiver thread for first type
+      }
     }
     assert(qit == qlist.end());
 

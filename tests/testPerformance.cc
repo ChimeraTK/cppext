@@ -245,24 +245,20 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
 
     static_assert(nTransfers % nQueues == 0, "nQueues must be an integer divider of nTransfers.");
 
-    std::map<size_t, std::shared_ptr<future_queue<int32_t>>> mapOfQueues;
-    for(size_t i=0; i<nQueues; ++i) {
-      auto q = std::make_shared<future_queue<int32_t>>(queueLength);
-      mapOfQueues.emplace(i, std::move(q));
-    }
+    std::vector<future_queue<int32_t>> vectorOfQueues;
+    for(size_t i=0; i<nQueues; ++i) vectorOfQueues.emplace_back(queueLength);
 
-    auto notificationQueue = when_any(mapOfQueues);
+    auto notificationQueue = when_any(vectorOfQueues);
 
     barrier b1(nQueues+1), b2(nQueues+1);
 
     std::vector<std::thread> senders;
-    for(auto &pair : mapOfQueues) {
-      senders.emplace_back( [&pair, &b1, &b2] {
-        auto &q = pair.second;
+    for(auto &q : vectorOfQueues) {
+      senders.emplace_back( [&q, &b1, &b2] {
         b1.wait();
         b2.wait();
         for(size_t i=0; i<nTransfers/nQueues; ++i) {
-          while(q->push(i & 0xFFFF) == false) usleep(1);
+          while(q.push(i & 0xFFFF) == false) usleep(1);
         }
       } );    // end thread sender
     }
@@ -275,7 +271,7 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
       size_t id;
       notificationQueue->pop_wait(id);
       int32_t val;
-      mapOfQueues[id]->pop(val);
+      vectorOfQueues[id].pop(val);
     }
 
     auto end = std::chrono::steady_clock::now();

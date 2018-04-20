@@ -245,10 +245,10 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
 
     static_assert(nTransfers % nQueues == 0, "nQueues must be an integer divider of nTransfers.");
 
-    std::map<future_queue_base::id_t, std::shared_ptr<future_queue<int32_t>>> mapOfQueues;
+    std::map<size_t, std::shared_ptr<future_queue<int32_t>>> mapOfQueues;
     for(size_t i=0; i<nQueues; ++i) {
       auto q = std::make_shared<future_queue<int32_t>>(queueLength);
-      mapOfQueues.emplace(q->get_id(), std::move(q));
+      mapOfQueues.emplace(i, std::move(q));
     }
 
     auto notificationQueue = when_any(mapOfQueues);
@@ -272,7 +272,7 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
     b2.wait();
 
     for(size_t i=0; i<nTransfers; ++i) {
-      future_queue_base::id_t id;
+      size_t id;
       notificationQueue->pop_wait(id);
       int32_t val;
       mapOfQueues[id]->pop(val);

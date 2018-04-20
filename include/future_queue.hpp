@@ -47,33 +47,6 @@ class future_queue_base {
       return false;
     }
 
-    // Class for the process-unique id_t, to prevent exposing implementation details of the id_t to the public interface
-    class id_t {
-      public:
-        id_t(const id_t &other) : _id(other._id) {}
-        id_t(id_t &&other) : _id(other._id) {}
-        id_t() : _id(0) {}
-        bool operator==(const id_t &rhs) const { return rhs._id == _id; }
-        bool operator!=(const id_t &rhs) const { return rhs._id != _id; }
-        bool operator<(const id_t &rhs) const { return rhs._id < _id; }
-        bool operator>(const id_t &rhs) const { return rhs._id > _id; }
-        bool operator<=(const id_t &rhs) const { return rhs._id <= _id; }
-        bool operator>=(const id_t &rhs) const { return rhs._id >= _id; }
-        id_t& operator=(const id_t &rhs) { _id = rhs._id; return *this; }
-
-        static id_t nullid() { return {0}; }
-
-      private:
-        id_t(size_t id) : _id(id) {}
-        size_t _id;
-        friend class future_queue_base;
-    };
-
-    // return a process-unique id_t of this
-    id_t get_id() const {
-      return d->id;
-    }
-
     // return length of the queue
     size_t size() const {
       return d->nBuffers - 1;
@@ -84,8 +57,7 @@ class future_queue_base {
     struct shared_state_base {
 
       shared_state_base(size_t length)
-      : id(get_next_id()),
-        nBuffers(length+1),
+      : nBuffers(length+1),
         semaphores(length+1),
         writeIndex(0),
         readIndexMax(0),
@@ -94,8 +66,8 @@ class future_queue_base {
         notifyerQueue_previousData(0)
       {}
 
-      // process-unique id_t of this queue
-      id_t id;
+      // index used in wait_any to identify the queue
+      size_t when_any_index;
 
       // the number of buffers we have allocated
       size_t nBuffers;
@@ -117,7 +89,7 @@ class future_queue_base {
       bool hasFrontOwnership;
 
       // Pointer to notification queue used to realise a wait_any logic.
-      std::shared_ptr<future_queue<id_t>> notifyerQueue;
+      std::shared_ptr<future_queue<size_t>> notifyerQueue;
 
       // counter for the number of elements in the queue before when_any has added the notifyerQueue
       std::atomic<size_t> notifyerQueue_previousData;
@@ -161,16 +133,7 @@ class future_queue_base {
     std::shared_ptr<shared_state_base> d_ptr;
     shared_state_base *d;
 
-    friend std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
-
-  private:
-
-    // return next available process-unique id_t
-    static id_t get_next_id() {
-      static std::atomic<size_t> nextId{0};
-      ++nextId;
-      return id_t(nextId);
-    }
+    friend std::shared_ptr<future_queue<size_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
 
 };
 
@@ -207,7 +170,7 @@ class future_queue : public future_queue_base {
       // send notification if requested
       auto notify = std::atomic_load(&d->notifyerQueue);
       if(notify) {
-        bool nret = notify->push(get_id());
+        bool nret = notify->push(d->when_any_index);
         (void)nret;
         assert(nret == true);
       }
@@ -247,7 +210,7 @@ class future_queue : public future_queue_base {
       if(ret) {
         auto notify = std::atomic_load(&d->notifyerQueue);
         if(notify) {
-          bool nret = notify->push(get_id());
+          bool nret = notify->push(d->when_any_index);
           (void)nret;
           assert(nret == true);
         }
@@ -342,28 +305,31 @@ class future_queue : public future_queue_base {
 //
 // If data is already available in the queues before calling when_any, the appropriate number of notifications are
 // placed in the notifyer queue in arbitrary order.
-std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
+std::shared_ptr<future_queue<size_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues) {
 
     // Add lengthes of all queues - this will be the length of the notification queue
     size_t summedLength = 0;
     for(auto &queue : listOfQueues) summedLength += queue.get().size();
 
     // Create a notification queue in a shared pointer, so we can hand it on to the queues
-    auto notifyerQueue = std::make_shared<future_queue<future_queue_base::id_t>>(summedLength);
+    auto notifyerQueue = std::make_shared<future_queue<size_t>>(summedLength);
 
     // Distribute the pointer to the notification queue to all participating queues
+    size_t index = 0;
     for(auto &queue : listOfQueues) {
       std::atomic_store(&(queue.get().d->notifyerQueue), notifyerQueue);
       // at this point, queue.get().notifyerQueue_previousData will no longer be modified by the sender side
       size_t nPreviousValues = queue.get().d->notifyerQueue_previousData;
-      for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue->push(queue.get().get_id());
+      queue.get().d->when_any_index = index;
+      for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue->push(index);
+      ++index;
     }
 
     return notifyerQueue;
 }
 
 template<typename QUEUE_PTR_TYPE>
-std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::map<future_queue_base::id_t, QUEUE_PTR_TYPE> mapOfQueues) {
+std::shared_ptr<future_queue<size_t>> when_any(std::map<size_t, QUEUE_PTR_TYPE> mapOfQueues) {
     std::list<std::reference_wrapper<future_queue_base>> listOfQueues;
     for(auto &pair : mapOfQueues) listOfQueues.push_back(*(pair.second));
     return when_any(listOfQueues);

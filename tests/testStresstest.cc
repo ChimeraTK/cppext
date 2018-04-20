@@ -50,14 +50,14 @@ BOOST_AUTO_TEST_CASE(stresstest) {
       std::vector<int> nextValues;
       std::vector<std::reference_wrapper<future_queue<int>>> myqueues;
       std::list<std::reference_wrapper<future_queue_base>> myqueues2;
-      std::map<future_queue_base::id_t, std::reference_wrapper<future_queue<int>>> myqueuemap;
-      std::map<future_queue_base::id_t, int> nextValues2;
+      std::map<size_t, std::reference_wrapper<future_queue<int>>> myqueuemap;
+      std::map<size_t, int> nextValues2;
       for(size_t k=0; k<nQueuesPerReceiver; ++k) {
         myqueues.emplace_back(*qit);
         myqueues2.emplace_back(*qit);
         nextValues.push_back(0);
-        myqueuemap.emplace(qit->get_id(), *qit);
-        nextValues2[qit->get_id()] = 0;
+        myqueuemap.emplace(k, *qit);
+        nextValues2[k] = 0;
         ++qit;
       }
 
@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
         receiverThreads.emplace_back( [nextValues2, notifyer, myqueuemap, &shutdownReceivers] () mutable {
           // 'endless' loop to send data
           while(!shutdownReceivers) {
-            future_queue_base::id_t id;
+            size_t id;
             notifyer->pop_wait(id);
             int value;
             assert(myqueuemap.at(id).get().has_data());

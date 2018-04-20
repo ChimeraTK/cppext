@@ -41,15 +41,15 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
         // write once to a single queue and find the change with wait_any
         size_t iq=0;
         for(auto &theQ : q) {
-          ++iq;
           MovableDataType value( length*nqueues + iq );
           theQ.push(std::move(value));
-          future_queue_base::id_t id;
+          size_t id;
           BOOST_CHECK( nq->pop(id) );
-          BOOST_CHECK( id == theQ.get_id() );
+          BOOST_CHECK( id == iq );
           MovableDataType readValue;
           BOOST_CHECK( theQ.pop(readValue) );
           BOOST_CHECK_EQUAL( readValue.value(), length*nqueues + iq );
+          ++iq;
         }
 
         // write a mixed sequece to the queues and check that the order is properly reflected in the notification queue
@@ -75,9 +75,9 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
         for(size_t i=0; i<length; ++i) {
           iq=0;
           for(auto &theQ : q) {
-            future_queue_base::id_t id;
+            size_t id;
             nq->pop_wait(id);
-            BOOST_CHECK( id == theQ.get_id() );
+            BOOST_CHECK( id == iq );
             MovableDataType readValue;
             BOOST_CHECK( theQ.pop(readValue) );
             if(i < length - 1 || iq > 0) {
@@ -134,15 +134,15 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
         // find the previously written data with wait_any
         iq=0;
         for(auto &theQ : q) {
-          ++iq;
-          for(size_t i=0; i<std::min(iq,length); ++i) {   // only check until length of the queue
-            future_queue_base::id_t id;
+          for(size_t i=0; i<std::min(iq+1,length); ++i) {   // only check until length of the queue
+            size_t id;
             BOOST_CHECK( nq->pop(id) );
-            BOOST_CHECK( id == theQ.get_id() );
+            BOOST_CHECK( id == iq );
             MovableDataType readValue;
             BOOST_CHECK( theQ.pop(readValue) );
             // don't compare the value since in case of push_overwrite this gets complicated...
           }
+          ++iq;
         }
 
         // write a mixed sequece to the queues and check that the order is properly reflected in the notification queue
@@ -163,9 +163,9 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
         for(size_t i=0; i<length; ++i) {
           iq=0;
           for(auto &theQ : q) {
-            future_queue_base::id_t id;
+            size_t id;
             nq->pop_wait(id);
-            BOOST_CHECK( id == theQ.get_id() );
+            BOOST_CHECK( id == iq );
             MovableDataType readValue;
             BOOST_CHECK( theQ.pop(readValue) );
             if(i < length - 1 || iq > 0) {

@@ -135,10 +135,7 @@ class future_queue_base {
 
 };
 
-// A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
-// is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
-// allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
-// function wait_any() to wait until any of the given future_queues is not empty.
+// Intermediate class to break self-dependency in the implementation of when_any.
 template<typename T>
 class no_when_any_future_queue : public future_queue_base {
 
@@ -253,6 +250,10 @@ class no_when_any_future_queue : public future_queue_base {
 
 };
 
+// A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
+// is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
+// allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
+// function wait_any() to wait until any of the given future_queues is not empty.
 template<typename T>
 class future_queue : public no_when_any_future_queue<T> {
 

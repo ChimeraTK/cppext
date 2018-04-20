@@ -269,7 +269,7 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
 
     for(size_t i=0; i<nTransfers; ++i) {
       size_t id;
-      notificationQueue->pop_wait(id);
+      notificationQueue.pop_wait(id);
       int32_t val;
       vectorOfQueues[id].pop(val);
     }

@@ -79,7 +79,7 @@ class future_queue_base {
       return d->nBuffers - 1;
     }
 
-  //protected:      // FIXME make protected again - requires change of testObtainWriteSlot
+  protected:
 
     struct shared_state_base {
 

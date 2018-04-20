@@ -21,7 +21,7 @@ BOOST_AUTO_TEST_CASE(testObtainWriteSlot) {
 
     // create the queue
     future_queue<int> q(lengthOfQueue);
-    BOOST_CHECK_EQUAL( q.nBuffers, lengthOfQueue+1 );
+    BOOST_CHECK_EQUAL( q.d->nBuffers, lengthOfQueue+1 );
 
     // list of threads so we can collect them later
     std::list<boost::thread> threads;
@@ -78,9 +78,9 @@ BOOST_AUTO_TEST_CASE(testObtainWriteSlot) {
       // reset queue for next test
       size_t readIndex = iteration;
       size_t nElemsInQueue = dis(gen);
-      q.readIndex = readIndex;
+      q.d->readIndex = readIndex;
       size_t writeIndex = readIndex+nElemsInQueue;
-      q.writeIndex = writeIndex;
+      q.d->writeIndex = writeIndex;
 
       //std::cout << "iteration = " << iteration << " q.readIndex = " << q.readIndex << " q.writeIndex = " << q.writeIndex << std::endl;
 
@@ -96,8 +96,8 @@ BOOST_AUTO_TEST_CASE(testObtainWriteSlot) {
 
       // check result
       b2.wait();
-      BOOST_CHECK_EQUAL( q.readIndex, readIndex );
-      BOOST_CHECK_EQUAL( q.writeIndex, readIndex+lengthOfQueue );
+      BOOST_CHECK_EQUAL( q.d->readIndex, readIndex );
+      BOOST_CHECK_EQUAL( q.d->writeIndex, readIndex+lengthOfQueue );
       BOOST_CHECK_EQUAL( noSlotCounter, nThreads - lengthOfQueue + nElemsInQueue );
 
       // these slots must not be used

@@ -20,10 +20,10 @@ class future_queue_base {
 
     // Number of push operations which can be performed before the queue is full.
     size_t write_available() const {
-      size_t l_writeIndex = writeIndex;
-      size_t l_readIndex = readIndex;
-      if(l_writeIndex - l_readIndex < nBuffers-1) {
-        return nBuffers - (l_writeIndex - l_readIndex) - 1;
+      size_t l_writeIndex = d->writeIndex;
+      size_t l_readIndex = d->readIndex;
+      if(l_writeIndex - l_readIndex < d->nBuffers-1) {
+        return d->nBuffers - (l_writeIndex - l_readIndex) - 1;
       }
       else {
         return 0;
@@ -34,14 +34,14 @@ class future_queue_base {
     // in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
     // accessing it through pop() or front(), use has_data().
     size_t read_available() {
-      return readIndexMax - readIndex;
+      return d->readIndexMax - d->readIndex;
     }
 
     // Check for the presence of readable data in the queue.
     bool has_data() {
-      if(hasFrontOwnership) return true;
-      if(semaphores[readIndex%nBuffers].is_ready_and_reset()) {
-        hasFrontOwnership = true;
+      if(d->hasFrontOwnership) return true;
+      if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
+        d->hasFrontOwnership = true;
         return true;
       }
       return false;
@@ -71,55 +71,68 @@ class future_queue_base {
 
     // return a process-unique id_t of this
     id_t get_id() const {
-      return id;
+      return d->id;
     }
 
     // return length of the queue
     size_t size() const {
-      return nBuffers - 1;
+      return d->nBuffers - 1;
     }
 
   //protected:      // FIXME make protected again - requires change of testObtainWriteSlot
 
-    future_queue_base(size_t length)
-    : id(get_next_id()),
-      nBuffers(length+1),
-      semaphores(length+1),
-      writeIndex(0),
-      readIndexMax(0),
-      readIndex(0),
-      hasFrontOwnership(false),
-      notifyerQueue_previousData(0)
-    {}
+    struct shared_state_base {
 
-    // process-unique id_t of this queue
-    id_t id;
+      shared_state_base(size_t length)
+      : id(get_next_id()),
+        nBuffers(length+1),
+        semaphores(length+1),
+        writeIndex(0),
+        readIndexMax(0),
+        readIndex(0),
+        hasFrontOwnership(false),
+        notifyerQueue_previousData(0)
+      {}
 
-    // the number of buffers we have allocated
-    size_t nBuffers;
+      // process-unique id_t of this queue
+      id_t id;
 
-    // vector of semaphores corresponding to the buffers which allows the receiver to wait for new data
-    std::vector<semaphore> semaphores;
+      // the number of buffers we have allocated
+      size_t nBuffers;
 
-    // index of the element which will be next written
-    std::atomic<size_t> writeIndex;
+      // vector of semaphores corresponding to the buffers which allows the receiver to wait for new data
+      std::vector<semaphore> semaphores;
 
-    // maximum index which the receiver is currently allowed to read (after checking it semaphore). Often equal to
-    // writeIndex, unless write operations are currently in progress
-    std::atomic<size_t> readIndexMax;
+      // index of the element which will be next written
+      std::atomic<size_t> writeIndex;
 
-    // index of the element which will be next read
-    std::atomic<size_t> readIndex;
+      // maximum index which the receiver is currently allowed to read (after checking it semaphore). Often equal to
+      // writeIndex, unless write operations are currently in progress
+      std::atomic<size_t> readIndexMax;
 
-    // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
-    bool hasFrontOwnership;
+      // index of the element which will be next read
+      std::atomic<size_t> readIndex;
+
+      // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
+      bool hasFrontOwnership;
+
+      // Pointer to notification queue used to realise a wait_any logic.
+      std::shared_ptr<future_queue<id_t>> notifyerQueue;
+
+      // counter for the number of elements in the queue before when_any has added the notifyerQueue
+      std::atomic<size_t> notifyerQueue_previousData;
+
+    };
+
+    future_queue_base(const std::shared_ptr<shared_state_base> &d_ptr_)
+    : d_ptr(d_ptr_), d(d_ptr.get()) {}
 
     // reserve next available write slot. Returns false if no free slot is available or true on success.
     bool obtain_write_slot(size_t &index) {
-      index = writeIndex;
+      index = d->writeIndex;
       while(true) {
-        if(index >= readIndex+nBuffers - 1) return false;   // queue is full
-        bool success = writeIndex.compare_exchange_weak(index, index+1);
+        if(index >= d->readIndex+d->nBuffers - 1) return false;   // queue is full
+        bool success = d->writeIndex.compare_exchange_weak(index, index+1);
         if(success) break;
       }
       return true;
@@ -127,25 +140,26 @@ class future_queue_base {
 
     // update readIndexMax after a write operation was completed
     void update_read_index_max() {
-      size_t l_readIndex = readIndex;
-      size_t l_writeIndex = writeIndex;
-      size_t l_readIndexMax = readIndexMax;
-      if(l_writeIndex >= l_readIndex+nBuffers) l_writeIndex = l_readIndex+nBuffers-1;
+      size_t l_readIndex = d->readIndex;
+      size_t l_writeIndex = d->writeIndex;
+      size_t l_readIndexMax = d->readIndexMax;
+      if(l_writeIndex >= l_readIndex+d->nBuffers) l_writeIndex = l_readIndex+d->nBuffers-1;
       size_t newReadIndexMax = l_readIndexMax;
       do {
         for(size_t index = l_readIndexMax; index <= l_writeIndex-1; ++index) {
-          if(!semaphores[index % nBuffers].is_ready()) break;
+          if(!d->semaphores[index % d->nBuffers].is_ready()) break;
           newReadIndexMax = index+1;
         }
-        readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
-      } while(readIndexMax < newReadIndexMax);
+        d->readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
+      } while(d->readIndexMax < newReadIndexMax);
     }
 
-    // Pointer to notification queue used to realise a wait_any logic.
-    std::shared_ptr<future_queue<id_t>> notifyerQueue;
-
-    // counter for the number of elements in the queue before when_any has added the notifyerQueue
-    std::atomic<size_t> notifyerQueue_previousData;
+    // pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue).
+    // for some reason, using the shared_ptr in the access is slower than a plain pointer, so we keep the shared_ptr
+    // here only for the ownership and use in the implementation always the plain pointer (which points to the same
+    // object).
+    std::shared_ptr<shared_state_base> d_ptr;
+    shared_state_base *d;
 
     friend std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::reference_wrapper<future_queue_base>> listOfQueues);
 
@@ -170,29 +184,35 @@ class future_queue : public future_queue_base {
   public:
 
     // The length specifies how many objects the queue can contain at a time. Internally additional buffers will be
-    // allocated. All buffers are allocated upon construction, so no dynamic memory allocation is required later.
+    // allocated-> All buffers are allocated upon construction, so no dynamic memory allocation is required later.
     future_queue(size_t length)
-    : future_queue_base(length),
-      buffers(length+1)
+    : future_queue_base(std::make_shared<shared_state>(length))
     {}
+
+    // The default constructor creates only a place holder which can later be assigned with a properly constructed
+    // queue.
+    future_queue() {}
+
+    // Assignment operator
+    future_queue& operator=(const future_queue &other) = default;
 
     // Push object t to the queue. Returns true if successful and false if queue is full.
     bool push(T&& t) {
       size_t myIndex;
       if(!obtain_write_slot(myIndex)) return false;
-      buffers[myIndex % nBuffers] = std::move(t);
-      assert(!semaphores[myIndex % nBuffers].is_ready());
-      semaphores[myIndex % nBuffers].unlock();
+      static_cast<shared_state*>(future_queue_base::d)->buffers[myIndex % d->nBuffers] = std::move(t);
+      assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
+      d->semaphores[myIndex % d->nBuffers].unlock();
       update_read_index_max();
       // send notification if requested
-      auto notify = std::atomic_load(&notifyerQueue);
+      auto notify = std::atomic_load(&d->notifyerQueue);
       if(notify) {
         bool nret = notify->push(get_id());
         (void)nret;
         assert(nret == true);
       }
       else {
-        notifyerQueue_previousData++;
+        d->notifyerQueue_previousData++;
       }
       return true;
     }
@@ -201,14 +221,14 @@ class future_queue : public future_queue_base {
     }
 
     // Push object t to the queue. If the queue is full, the last element will be overwritten and false will be
-    // returned. If no data had to be overwritten, true is returned.
+    // returned-> If no data had to be overwritten, true is returned->
     // When using this function the queue must have a length of at least 2.
     // Note: when used in a multi-producer context the behaviour is undefined!
     bool push_overwrite(T&& t) {
-      assert(nBuffers-1 > 1);
+      assert(d->nBuffers-1 > 1);
       bool ret = true;
       if(write_available() == 0) {
-        if(semaphores[(writeIndex-1)%nBuffers].is_ready_and_reset()) {
+        if(d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready_and_reset()) {
           ret = false;
         }
         else {
@@ -216,23 +236,23 @@ class future_queue : public future_queue_base {
           // this case we should now have buffers available for writing.
           assert(write_available() > 0);
         }
-        writeIndex--;
+        d->writeIndex--;
       }
-      buffers[writeIndex%nBuffers] = std::move(t);
-      writeIndex++;
-      assert(!semaphores[(writeIndex-1)%nBuffers].is_ready());
-      semaphores[(writeIndex-1)%nBuffers].unlock();
-      readIndexMax = size_t(writeIndex);
+      static_cast<shared_state*>(future_queue_base::d)->buffers[d->writeIndex%d->nBuffers] = std::move(t);
+      d->writeIndex++;
+      assert(!d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready());
+      d->semaphores[(d->writeIndex-1)%d->nBuffers].unlock();
+      d->readIndexMax = size_t(d->writeIndex);
       // send notification if requested and if data wasn't overwritten
       if(ret) {
-        auto notify = std::atomic_load(&notifyerQueue);
+        auto notify = std::atomic_load(&d->notifyerQueue);
         if(notify) {
           bool nret = notify->push(get_id());
           (void)nret;
           assert(nret == true);
         }
         else {
-          notifyerQueue_previousData++;
+          d->notifyerQueue_previousData++;
         }
       }
       return ret;
@@ -243,12 +263,12 @@ class future_queue : public future_queue_base {
 
     // Pop object off the queue and store it in t. If no data is available, false is returned
     bool pop(T& t) {
-      if( hasFrontOwnership || semaphores[readIndex%nBuffers].is_ready_and_reset() ) {
-        t = std::move(buffers[readIndex%nBuffers]);
-        assert(readIndex < writeIndex);
-        readIndex++;
-        notifyerQueue_previousData--;
-        hasFrontOwnership = false;
+      if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
+        t = std::move(static_cast<shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
+        assert(d->readIndex < d->writeIndex);
+        d->readIndex++;
+        d->notifyerQueue_previousData--;
+        d->hasFrontOwnership = false;
         return true;
       }
       else {
@@ -264,16 +284,16 @@ class future_queue : public future_queue_base {
 
     // Pop object off the queue and store it in t. This function will block until data is available.
     void pop_wait(T& t) {
-      if(!hasFrontOwnership) {
-        semaphores[readIndex%nBuffers].wait_and_reset();
+      if(!d->hasFrontOwnership) {
+        d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
       }
       else {
-        hasFrontOwnership = false;
+        d->hasFrontOwnership = false;
       }
-      t = std::move(buffers[readIndex%nBuffers]);
-      assert(readIndex < writeIndex);
-      readIndex++;
-      notifyerQueue_previousData--;
+      t = std::move(static_cast<shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
+      assert(d->readIndex < d->writeIndex);
+      d->readIndex++;
+      d->notifyerQueue_previousData--;
     }
 
     // Pop object off the queue and discard it. This function will block until data is available.
@@ -285,17 +305,22 @@ class future_queue : public future_queue_base {
     // Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
     // in the queue by calling has_data() before calling this function.
     const T& front() const {
-      assert(hasFrontOwnership);
-      return buffers[readIndex%nBuffers];
+      assert(d->hasFrontOwnership);
+      return static_cast<shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers];
     }
 
   private:
 
-    // vector of buffers - allocation is done in the constructor
-    std::vector<T> buffers;
+    struct shared_state : shared_state_base {
+      shared_state(size_t length)
+      : shared_state_base(length), buffers(length+1)
+      {}
+
+      // vector of buffers - allocation is done in the constructor
+      std::vector<T> buffers;
+    };
 
 };
-
 
 
 // Return a future_queue which will receive the future_queue_base::id_t of each queue in listOfQueues when the
@@ -312,8 +337,8 @@ class future_queue : public future_queue_base {
 // queue might be in a different order (i.e. when data is overwritten, the corresponding queue id is not moved to
 // the correct place later in the notfication queue). Also, a notification for a value written to a queue with
 // push_overwrite() might appear in the notification queue before the value can be retrieve from the data queue. It is
-// therefore recommended to use pop_wait() to retrieve the values from the data queues if push_overwrite() is used.
-// Otherwise failed pop() have to be retried until the data is received.
+// therefore recommended to use pop_wait() to retrieve the values from the data queues if push_overwrite() is used->
+// Otherwise failed pop() have to be retried until the data is received->
 //
 // If data is already available in the queues before calling when_any, the appropriate number of notifications are
 // placed in the notifyer queue in arbitrary order.
@@ -328,9 +353,9 @@ std::shared_ptr<future_queue<future_queue_base::id_t>> when_any(std::list<std::r
 
     // Distribute the pointer to the notification queue to all participating queues
     for(auto &queue : listOfQueues) {
-      std::atomic_store(&(queue.get().notifyerQueue), notifyerQueue);
+      std::atomic_store(&(queue.get().d->notifyerQueue), notifyerQueue);
       // at this point, queue.get().notifyerQueue_previousData will no longer be modified by the sender side
-      size_t nPreviousValues = queue.get().notifyerQueue_previousData;
+      size_t nPreviousValues = queue.get().d->notifyerQueue_previousData;
       for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue->push(queue.get().get_id());
     }
 

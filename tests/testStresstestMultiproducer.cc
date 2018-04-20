@@ -31,7 +31,7 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducer) {
 
     // launch sender threads
     for(size_t i=0; i<nSenders; ++i) {
-      senderThreads.emplace_back( [i, &q, &shutdownSenders] () mutable {
+      senderThreads.emplace_back( [i, q, &shutdownSenders] () mutable {
         int senderFirstValue = i*idsPerSender;
         // 'endless' loop to send data
         size_t consequtive_fails = 0;
@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducer) {
     }
 
     // launch receiver thread
-    boost::thread receiverThread( [&q, &shutdownReceiver] () mutable {
+    boost::thread receiverThread( [q, &shutdownReceiver] () mutable {
       std::vector<int> nextValues(nSenders);
       for(size_t i=0; i<nSenders; ++i) nextValues[i] = i*idsPerSender;
 

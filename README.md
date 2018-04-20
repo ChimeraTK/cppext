@@ -12,6 +12,7 @@ The future_queue is a thread-safe queue with the following features:
 * Single consumer: pop()/pop_wait() may only be called from a single thread at the same time
 * push_overwrite(): Overwrite the last element in the queue if the queue is full (only in single-producer context)
 * when_any(): get notified on new data in a given list of future_queues in a well-defined order
+* Shared: Instances are copyable, copies are referring to the same queue.
 
 ## Example
 ```C++
@@ -42,7 +43,7 @@ int main() {
     myQueue.pop_wait(value);                // wait until new data has arrived
     std::cout << value << std::endl;
   }
-  
+
   myThread.join();
   return 0;
 }

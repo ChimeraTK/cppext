@@ -11,7 +11,6 @@
 
 template<typename T>
 class future_queue;
-
 // Base class for future_queue which does not depend on the template argument. For a description see future_queue.
 // FIXME protect index handling against overruns of size_t!
 class future_queue_base {
@@ -62,8 +61,7 @@ class future_queue_base {
         writeIndex(0),
         readIndexMax(0),
         readIndex(0),
-        hasFrontOwnership(false),
-        notifyerQueue_previousData(0)
+        hasFrontOwnership(false)
       {}
 
       // index used in wait_any to identify the queue
@@ -88,16 +86,12 @@ class future_queue_base {
       // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
       bool hasFrontOwnership;
 
-      // Pointer to notification queue used to realise a wait_any logic.
-      std::shared_ptr<future_queue<size_t>> notifyerQueue;
-
-      // counter for the number of elements in the queue before when_any has added the notifyerQueue
-      std::atomic<size_t> notifyerQueue_previousData;
-
     };
 
     future_queue_base(const std::shared_ptr<shared_state_base> &d_ptr_)
     : d_ptr(d_ptr_), d(d_ptr.get()) {}
+
+    future_queue_base() : d(nullptr) {}
 
     // reserve next available write slot. Returns false if no free slot is available or true on success.
     bool obtain_write_slot(size_t &index) {
@@ -136,6 +130,9 @@ class future_queue_base {
     template<typename ITERABLE_TYPE>
     friend std::shared_ptr<future_queue<size_t>> when_any(ITERABLE_TYPE listOfQueues);
 
+    template<typename T>
+    friend class future_queue;
+
 };
 
 // A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
@@ -143,41 +140,18 @@ class future_queue_base {
 // allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
 // function wait_any() to wait until any of the given future_queues is not empty.
 template<typename T>
-class future_queue : public future_queue_base {
+class no_when_any_future_queue : public future_queue_base {
 
   public:
-
-    // The length specifies how many objects the queue can contain at a time. Internally additional buffers will be
-    // allocated-> All buffers are allocated upon construction, so no dynamic memory allocation is required later.
-    future_queue(size_t length)
-    : future_queue_base(std::make_shared<shared_state>(length))
-    {}
-
-    // The default constructor creates only a place holder which can later be assigned with a properly constructed
-    // queue.
-    future_queue() {}
-
-    // Assignment operator
-    future_queue& operator=(const future_queue &other) = default;
 
     // Push object t to the queue. Returns true if successful and false if queue is full.
     bool push(T&& t) {
       size_t myIndex;
       if(!obtain_write_slot(myIndex)) return false;
-      static_cast<shared_state*>(future_queue_base::d)->buffers[myIndex % d->nBuffers] = std::move(t);
+      static_cast<no_when_any_shared_state*>(future_queue_base::d)->buffers[myIndex % d->nBuffers] = std::move(t);
       assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
       d->semaphores[myIndex % d->nBuffers].unlock();
       update_read_index_max();
-      // send notification if requested
-      auto notify = std::atomic_load(&d->notifyerQueue);
-      if(notify) {
-        bool nret = notify->push(d->when_any_index);
-        (void)nret;
-        assert(nret == true);
-      }
-      else {
-        d->notifyerQueue_previousData++;
-      }
       return true;
     }
     bool push(const T& t) {
@@ -202,48 +176,26 @@ class future_queue : public future_queue_base {
         }
         d->writeIndex--;
       }
-      static_cast<shared_state*>(future_queue_base::d)->buffers[d->writeIndex%d->nBuffers] = std::move(t);
+      static_cast<no_when_any_shared_state*>(future_queue_base::d)->buffers[d->writeIndex%d->nBuffers] = std::move(t);
       d->writeIndex++;
       assert(!d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready());
       d->semaphores[(d->writeIndex-1)%d->nBuffers].unlock();
       d->readIndexMax = size_t(d->writeIndex);
-      // send notification if requested and if data wasn't overwritten
-      if(ret) {
-        auto notify = std::atomic_load(&d->notifyerQueue);
-        if(notify) {
-          bool nret = notify->push(d->when_any_index);
-          (void)nret;
-          assert(nret == true);
-        }
-        else {
-          d->notifyerQueue_previousData++;
-        }
-      }
       return ret;
-    }
-    bool push_overwrite(const T& t) {
-      return push_overwrite(T(t));
     }
 
     // Pop object off the queue and store it in t. If no data is available, false is returned
     bool pop(T& t) {
       if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
-        t = std::move(static_cast<shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
+        t = std::move(static_cast<no_when_any_shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
         assert(d->readIndex < d->writeIndex);
         d->readIndex++;
-        d->notifyerQueue_previousData--;
         d->hasFrontOwnership = false;
         return true;
       }
       else {
         return false;
       }
-    }
-
-    // Pop object off the queue and discard it. If no data is available, false is returned
-    bool pop() {
-      T t;
-      return pop(t);
     }
 
     // Pop object off the queue and store it in t. This function will block until data is available.
@@ -254,10 +206,138 @@ class future_queue : public future_queue_base {
       else {
         d->hasFrontOwnership = false;
       }
-      t = std::move(static_cast<shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
+      t = std::move(static_cast<no_when_any_shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
       assert(d->readIndex < d->writeIndex);
       d->readIndex++;
-      d->notifyerQueue_previousData--;
+    }
+
+    // Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
+    // in the queue by calling has_data() before calling this function.
+    const T& front() const {
+      assert(d->hasFrontOwnership);
+      return static_cast<no_when_any_shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers];
+    }
+
+  protected:
+
+    struct no_when_any_shared_state : shared_state_base {
+      no_when_any_shared_state(size_t length)
+      : shared_state_base(length), buffers(length+1)
+      {}
+
+      // vector of buffers - allocation is done in the constructor
+      std::vector<T> buffers;
+    };
+
+    no_when_any_future_queue(const std::shared_ptr<no_when_any_shared_state> &d_ptr_)
+    : future_queue_base(d_ptr_)
+    {}
+
+  public:
+
+    no_when_any_future_queue() {}
+
+    friend no_when_any_future_queue<T> atomic_load(const no_when_any_future_queue<T>* p) {
+      no_when_any_future_queue<T> q;
+      q.d_ptr = std::atomic_load(&(p->d_ptr));
+      q.d = q.d_ptr.get();
+      return q;
+    }
+
+    friend void atomic_store(no_when_any_future_queue<T>* p, no_when_any_future_queue<T> r) {
+      atomic_store(&(p->d_ptr), r->d_ptr);
+    }
+};
+
+template<typename T>
+class future_queue : public no_when_any_future_queue<T> {
+
+  protected:
+
+    struct shared_state : no_when_any_future_queue<T>::no_when_any_shared_state {
+      shared_state(size_t length)
+      : no_when_any_future_queue<T>::no_when_any_shared_state(length),
+        notifyerQueue_previousData(0)
+      {}
+
+      // Notification queue used to realise a wait_any logic. This queue is shared between all queues participating in
+      // the same when_any.
+      no_when_any_future_queue<size_t> notifyerQueue;
+
+      // counter for the number of elements in the queue before when_any has added the notifyerQueue
+      std::atomic<size_t> notifyerQueue_previousData;
+    };
+
+  public:
+
+    // The length specifies how many objects the queue can contain at a time. Internally additional buffers will be
+    // allocated-> All buffers are allocated upon construction, so no dynamic memory allocation is required later.
+    future_queue(size_t length)
+    : no_when_any_future_queue<T>(std::make_shared<shared_state>(length))
+    {}
+
+    // The default constructor creates only a place holder which can later be assigned with a properly constructed
+    // queue.
+    future_queue() {}
+
+    // Assignment operator
+    future_queue& operator=(const future_queue &other) = default;
+
+    bool push(T&& t) {
+      auto r = no_when_any_future_queue<T>::push(std::move(t));
+      // send notification if requested
+      if(r) {
+        auto notify = atomic_load(&static_cast<shared_state*>(future_queue_base::d)->notifyerQueue);
+        if(notify.d_ptr) {
+          bool nret = notify.push(static_cast<shared_state*>(future_queue_base::d)->when_any_index);
+          (void)nret;
+          assert(nret == true);
+        }
+        else {
+          static_cast<shared_state*>(future_queue_base::d)->notifyerQueue_previousData++;
+        }
+      }
+      return r;
+    }
+    bool push(const T& t) {
+      return push(T(t));
+    }
+
+    bool push_overwrite(T&& t) {
+      auto r = no_when_any_future_queue<T>::push_overwrite(std::move(t));
+      // send notification if requested and if data wasn't overwritten
+      if(r) {
+        auto notify = atomic_load(&static_cast<shared_state*>(future_queue_base::d)->notifyerQueue);
+        if(notify.d_ptr) {
+          bool nret = notify.push(static_cast<shared_state*>(future_queue_base::d)->when_any_index);
+          (void)nret;
+          assert(nret == true);
+        }
+        else {
+          static_cast<shared_state*>(future_queue_base::d)->notifyerQueue_previousData++;
+        }
+      }
+      return r;
+    }
+    bool push_overwrite(const T& t) {
+      return push_overwrite(T(t));
+    }
+
+    bool pop(T& t) {
+      auto r = no_when_any_future_queue<T>::pop(t);
+      static_cast<shared_state*>(future_queue_base::d)->notifyerQueue_previousData--;
+      return r;
+    }
+
+    void pop_wait(T& t) {
+      no_when_any_future_queue<T>::pop_wait(t);
+      static_cast<shared_state*>(future_queue_base::d)->notifyerQueue_previousData--;
+    }
+
+    // Pop object off the queue and discard it. If no data is available, false is returned
+    bool pop() {
+      T t;
+      return pop(t);
     }
 
     // Pop object off the queue and discard it. This function will block until data is available.
@@ -266,26 +346,7 @@ class future_queue : public future_queue_base {
       pop_wait(t);
     }
 
-    // Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
-    // in the queue by calling has_data() before calling this function.
-    const T& front() const {
-      assert(d->hasFrontOwnership);
-      return static_cast<shared_state*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers];
-    }
-
-  private:
-
-    struct shared_state : shared_state_base {
-      shared_state(size_t length)
-      : shared_state_base(length), buffers(length+1)
-      {}
-
-      // vector of buffers - allocation is done in the constructor
-      std::vector<T> buffers;
-    };
-
 };
-
 
 // Return a future_queue which will receive the future_queue_base::id_t of each queue in listOfQueues when the
 // respective queue has new data available for reading. This way the returned queue can be used to get notified about
@@ -307,23 +368,24 @@ class future_queue : public future_queue_base {
 // If data is already available in the queues before calling when_any, the appropriate number of notifications are
 // placed in the notifyer queue in arbitrary order.
 template<typename ITERABLE_TYPE>
-std::shared_ptr<future_queue<size_t>> when_any(ITERABLE_TYPE listOfQueues) {
+future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues) {
 
     // Add lengthes of all queues - this will be the length of the notification queue
     size_t summedLength = 0;
     for(auto &queue : listOfQueues) summedLength += queue.size();
 
     // Create a notification queue in a shared pointer, so we can hand it on to the queues
-    auto notifyerQueue = std::make_shared<future_queue<size_t>>(summedLength);
+    future_queue<size_t> notifyerQueue(summedLength);
+    no_when_any_future_queue<size_t> no_when_any_notifyerQueue(std::static_pointer_cast<no_when_any_future_queue<size_t>::no_when_any_shared_state>(notifyerQueue.d_ptr));
 
     // Distribute the pointer to the notification queue to all participating queues
     size_t index = 0;
     for(auto &queue : listOfQueues) {
-      std::atomic_store(&(queue.d->notifyerQueue), notifyerQueue);
+      atomic_store(&(queue.d->notifyerQueue), notifyerQueue);
       // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
       size_t nPreviousValues = queue.d->notifyerQueue_previousData;
       queue.d->when_any_index = index;
-      for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue->push(index);
+      for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue.push(index);
       ++index;
     }
 

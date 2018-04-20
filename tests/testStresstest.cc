@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
           // 'endless' loop to send data
           while(!shutdownReceivers) {
             size_t id;
-            notifyer->pop_wait(id);
+            notifyer.pop_wait(id);
             int value;
             assert(myqueues[id].has_data());
             bool ret = myqueues[id].pop(value);

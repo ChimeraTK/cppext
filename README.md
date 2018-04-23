@@ -61,19 +61,19 @@ The results of the performance test delivered with this library is as follows (o
 
 | Implementation                                                                                       | Time per transfer |
 |---------------------------------------------------------------------------------------------------------------|---------:|
-|`future_queue` with spin-waiting `pop()`                                                                       |  0.78 us |
-|`future_queue` with `pop_wait()`                                                                               |  0.64 us |
-|`future_queue` with `when_any()` (10 queues fed by each one thread)                                            |  1.36 us |
-|`future_queue` with `when_any()` (100 queues fed by each one thread)                                           |  1.42 us |
+|`future_queue` with spin-waiting `pop()`                                                                       |  0.23 us |
+|`future_queue` with `pop_wait()`                                                                               |  0.29 us |
+|`future_queue` with `when_any()` (10 queues fed by each one thread)                                            |  0.23 us |
+|`future_queue` with `when_any()` (100 queues fed by each one thread)                                           |  0.25 us |
 | **Comparison with boost::lockfree based implementations**                                                     |          |
-|`boost::lockfree::queue` with spin-waiting `pop()`                                                             |  1.15 us |
-|`boost::lockfree::spsc_queue` with spin-waiting `pop()`                                                        |  0.20 us |
-|`boost::lockfree::spsc_queue<boost::shared_future>` (equivalent to `future_queue::pop_wait()`)                 |  3.90 us |
-|`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (10 queues fed by each one thread)   | 11.23 us |
-|`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (100 queues fed by each one thread)  | 75.06 us |
+|`boost::lockfree::queue` with spin-waiting `pop()`                                                             |  0.15 us |
+|`boost::lockfree::spsc_queue` with spin-waiting `pop()`                                                        | 0.006 us |
+|`boost::lockfree::spsc_queue<boost::shared_future>` (equivalent to `future_queue::pop_wait()`)                 |  0.94 us |
+|`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (10 queues fed by each one thread)   |  2.14 us |
+|`boost::lockfree::spsc_queue<boost::shared_future>` with `wait_for_any()` (100 queues fed by each one thread)  | 18.36 us |
 
-The queues were each 1000 elements long and the elements on the queue were of the type int32_t. The used compiler was a gcc 5.4.0 and the used BOOST version was 1.58. The operating system was Ubuntu 16.04.
+The queues were each 1000 elements long and the elements on the queue were of the type int32_t. The used compiler was a gcc 5.4.0 with full optimisations (-03) and the used BOOST version was 1.58. The operating system was Ubuntu 16.04.
 
-As expected, the boost::lockfree::spsc_queue performs best if spin-waiting is acceptable. The performance of the future_queue is somewhere in the middle between the boost::lockfree::queue and the boost::lockfree::spsc_queue. If pop_wait() is required, the boost::lockfree equivalent would be a spsc_queue<shared_future> which is around 5 times slower than the future_queue (creating futures involves memory allocation). when_any is (after setting it up) half as fast as a single future_queue (since each transfer actually consists of two transfers then), but the equivalent wait_for_any with spsc_queue<shared_future> is much slower, scales badly with the number of participating queues and does not guarantee the order. (The difference between 10 and 100 participating queues in case of the future_queue with when_any seems to be caused only by statistical fluctuations.)
+The future_queue is a bit slower than the boost::lockfree::queue. If the functionality of pop_wait() is required, the boost::lockfree equivalent would be a spsc_queue<shared_future> which is around 3 times slower than the future_queue (creating futures involves memory allocation). when_any has (after setting it up) a similar performance as a single future_queue, but the equivalent wait_for_any with spsc_queue<shared_future> is much slower, scales badly with the number of participating queues and does not guarantee the order. (The difference between 10 and 100 participating queues in case of the future_queue with when_any seems to be caused only by statistical fluctuations.)
 
 The source code of the performance test can be found here: [tests/testPerformance.cc](tests/testPerformance.cc).

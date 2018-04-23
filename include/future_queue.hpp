@@ -50,11 +50,7 @@ class future_queue_base {
     void update_read_index_max();
 
     // pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue).
-    // for some reason, using the shared_ptr in the access is slower than a plain pointer, so we keep the shared_ptr
-    // here only for the ownership and use in the implementation always the plain pointer (which points to the same
-    // object).
-    std::shared_ptr<shared_state_base> d_ptr;
-    shared_state_base *d;
+    std::shared_ptr<shared_state_base> d;
 
     template<typename ITERABLE_TYPE>
     friend future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues);
@@ -110,13 +106,12 @@ class future_queue : public future_queue_base {
 
     friend future_queue<T> atomic_load(const future_queue<T>* p) {
       future_queue<T> q;
-      q.d_ptr = std::atomic_load(&(p->d_ptr));
-      q.d = q.d_ptr.get();
+      q.d = std::atomic_load(&(p->d));
       return q;
     }
 
     friend void atomic_store(future_queue<T>* p, future_queue<T> r) {
-      atomic_store(&(p->d_ptr), r.d_ptr);
+      atomic_store(&(p->d), r.d);
     }
 
     template<typename ITERABLE_TYPE>
@@ -217,7 +212,7 @@ future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues) {
     size_t index = 0;
     for(auto &queue : listOfQueues) {
       typedef shared_state<typename std::remove_reference<decltype(queue)>::type::value_type> shared_state_type;
-      auto *shared_state = static_cast<shared_state_type*>(queue.d);
+      auto *shared_state = static_cast<shared_state_type*>(queue.d.get());
       atomic_store(&(shared_state->notifyerQueue), notifyerQueue);
       // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
       size_t nPreviousValues = shared_state->notifyerQueue_previousData;
@@ -260,7 +255,7 @@ size_t future_queue_base::size() const {
 }
 
 future_queue_base::future_queue_base(const std::shared_ptr<shared_state_base> &d_ptr_)
-: d_ptr(d_ptr_), d(d_ptr.get()) {}
+: d(d_ptr_) {}
 
 future_queue_base::future_queue_base() : d(nullptr) {}
 
@@ -303,19 +298,19 @@ template<typename T>
 bool future_queue<T>::push(T&& t) {
   size_t myIndex;
   if(!obtain_write_slot(myIndex)) return false;
-  static_cast<shared_state<T>*>(future_queue_base::d)->buffers[myIndex % d->nBuffers] = std::move(t);
+  static_cast<shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers] = std::move(t);
   assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
   d->semaphores[myIndex % d->nBuffers].unlock();
   update_read_index_max();
   // send notification if requested
-  auto notify = atomic_load(&static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue);
-  if(notify.d_ptr) {
-    bool nret = notify.push(static_cast<shared_state<T>*>(future_queue_base::d)->when_any_index);
+  auto notify = atomic_load(&static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue);
+  if(notify.d) {
+    bool nret = notify.push(static_cast<shared_state<T>*>(future_queue_base::d.get())->when_any_index);
     (void)nret;
     assert(nret == true);
   }
   else {
-    static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue_previousData++;
+    static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData++;
   }
   return true;
 }
@@ -340,7 +335,7 @@ bool future_queue<T>::push_overwrite(T&& t) {
     }
     d->writeIndex--;
   }
-  static_cast<shared_state<T>*>(future_queue_base::d)->buffers[d->writeIndex%d->nBuffers] = std::move(t);
+  static_cast<shared_state<T>*>(future_queue_base::d.get())->buffers[d->writeIndex%d->nBuffers] = std::move(t);
   d->writeIndex++;
   assert(!d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready());
   d->semaphores[(d->writeIndex-1)%d->nBuffers].unlock();
@@ -348,14 +343,14 @@ bool future_queue<T>::push_overwrite(T&& t) {
 
   // send notification if requested and if data wasn't overwritten
   if(ret) {
-    auto notify = atomic_load(&static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue);
-    if(notify.d_ptr) {
-      bool nret = notify.push(static_cast<shared_state<T>*>(future_queue_base::d)->when_any_index);
+    auto notify = atomic_load(&static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue);
+    if(notify.d) {
+      bool nret = notify.push(static_cast<shared_state<T>*>(future_queue_base::d.get())->when_any_index);
       (void)nret;
       assert(nret == true);
     }
     else {
-      static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue_previousData++;
+      static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData++;
     }
   }
   return ret;
@@ -369,11 +364,11 @@ bool future_queue<T>::push_overwrite(const T& t) {
 template<typename T>
 bool future_queue<T>::pop(T& t) {
   if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
-    t = std::move(static_cast<shared_state<T>*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
+    t = std::move(static_cast<shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]);
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
     d->hasFrontOwnership = false;
-    static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue_previousData--;
+    static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
     return true;
   }
   else {
@@ -387,7 +382,7 @@ bool future_queue<T>::pop() {
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
     d->hasFrontOwnership = false;
-    static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue_previousData--;
+    static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
     return true;
   }
   else {
@@ -403,10 +398,10 @@ void future_queue<T>::pop_wait(T& t) {
   else {
     d->hasFrontOwnership = false;
   }
-  t = std::move(static_cast<shared_state<T>*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers]);
+  t = std::move(static_cast<shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]);
   assert(d->readIndex < d->writeIndex);
   d->readIndex++;
-  static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue_previousData--;
+  static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
 }
 
 template<typename T>
@@ -419,13 +414,13 @@ void future_queue<T>::pop_wait() {
   }
   assert(d->readIndex < d->writeIndex);
   d->readIndex++;
-  static_cast<shared_state<T>*>(future_queue_base::d)->notifyerQueue_previousData--;
+  static_cast<shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
 }
 
 template<typename T>
 const T& future_queue<T>::front() const {
   assert(d->hasFrontOwnership);
-  return static_cast<shared_state<T>*>(future_queue_base::d)->buffers[d->readIndex%d->nBuffers];
+  return static_cast<shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
 }
 
 #endif // FUTURE_QUEUE_HPP

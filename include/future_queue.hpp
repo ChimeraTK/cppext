@@ -128,17 +128,14 @@ class future_queue_base {
     shared_state_base *d;
 
     template<typename ITERABLE_TYPE>
-    friend std::shared_ptr<future_queue<size_t>> when_any(ITERABLE_TYPE listOfQueues);
+    friend future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues);
 
     template<typename T>
     friend class future_queue;
 
 };
 
-// A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
-// is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
-// allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
-// function wait_any() to wait until any of the given future_queues is not empty.
+// Intermediate class to break self-dependency in the implementation of when_any.
 template<typename T>
 class no_when_any_future_queue : public future_queue_base {
 
@@ -245,10 +242,18 @@ class no_when_any_future_queue : public future_queue_base {
     }
 
     friend void atomic_store(no_when_any_future_queue<T>* p, no_when_any_future_queue<T> r) {
-      atomic_store(&(p->d_ptr), r->d_ptr);
+      atomic_store(&(p->d_ptr), r.d_ptr);
     }
+
+    template<typename ITERABLE_TYPE>
+    friend future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues);
+
 };
 
+// A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
+// is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
+// allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
+// function wait_any() to wait until any of the given future_queues is not empty.
 template<typename T>
 class future_queue : public no_when_any_future_queue<T> {
 
@@ -346,6 +351,9 @@ class future_queue : public no_when_any_future_queue<T> {
       pop_wait(t);
     }
 
+    template<typename ITERABLE_TYPE>
+    friend future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues);
+
 };
 
 // Return a future_queue which will receive the future_queue_base::id_t of each queue in listOfQueues when the
@@ -381,9 +389,11 @@ future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues) {
     // Distribute the pointer to the notification queue to all participating queues
     size_t index = 0;
     for(auto &queue : listOfQueues) {
-      atomic_store(&(queue.d->notifyerQueue), notifyerQueue);
+      typedef typename std::remove_reference<decltype(queue)>::type::shared_state shared_state_type;
+      auto *shared_state = static_cast<shared_state_type*>(queue.d);
+      atomic_store(&(shared_state->notifyerQueue), notifyerQueue);
       // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
-      size_t nPreviousValues = queue.d->notifyerQueue_previousData;
+      size_t nPreviousValues = shared_state->notifyerQueue_previousData;
       queue.d->when_any_index = index;
       for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue.push(index);
       ++index;

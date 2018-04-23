@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
           MovableDataType value( length*nqueues + iq );
           theQ.push(std::move(value));
           size_t id;
-          BOOST_CHECK( nq->pop(id) );
+          BOOST_CHECK( nq.pop(id) );
           BOOST_CHECK( id == iq );
           MovableDataType readValue;
           BOOST_CHECK( theQ.pop(readValue) );
@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
           iq=0;
           for(auto &theQ : q) {
             size_t id;
-            nq->pop_wait(id);
+            nq.pop_wait(id);
             BOOST_CHECK( id == iq );
             MovableDataType readValue;
             BOOST_CHECK( theQ.pop(readValue) );
@@ -127,7 +127,7 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
         for(size_t iq=0; iq<nqueues; ++iq) {
           for(size_t i=0; i<std::min(iq,length); ++i) {   // only check until length of the queue
             size_t id;
-            BOOST_CHECK( nq->pop(id) );
+            BOOST_CHECK( nq.pop(id) );
             BOOST_CHECK( id == iq );
             MovableDataType readValue;
             BOOST_CHECK( q[iq].pop(readValue) );
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
         for(size_t i=0; i<length; ++i) {
           for(size_t iq=0; iq<nqueues; ++iq) {
             size_t id;
-            nq->pop_wait(id);
+            nq.pop_wait(id);
             BOOST_CHECK( id == iq );
             MovableDataType readValue;
             BOOST_CHECK( q[iq].pop(readValue) );

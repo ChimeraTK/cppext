@@ -69,10 +69,10 @@ namespace detail {
 
 /*********************************************************************************************************************/
 
-// A "lockfree" single-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
+// A lockfree multi-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
 // is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
 // allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
-// function wait_any() to wait until any of the given future_queues is not empty.
+// function when_any() to get notified when any of the given future_queues is not empty.
 template<typename T>
 class future_queue : public detail::future_queue_base {
 

@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
           std::vector<int> nextValues;
           for(size_t i=0; i<myqueues.size(); ++i) nextValues.push_back(0);
           // obtain notification queue
-          auto notifyer = when_any(myqueues);
+          auto notifyer = when_any(myqueues.begin(), myqueues.end());
           // 'endless' loop to send data
           while(!shutdownReceivers) {
             size_t id;

@@ -34,7 +34,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
         }
 
         // create notification queue
-        auto nq = when_any(q);
+        auto nq = when_any(q.begin(), q.end());
 
         // write once to a single queue and find the change with wait_any
         size_t iq=0;
@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
         }
 
         // create notification queue
-        auto nq = when_any(q);
+        auto nq = when_any(q.begin(), q.end());
 
         // find the previously written data with wait_any
         for(size_t iq=0; iq<nqueues; ++iq) {

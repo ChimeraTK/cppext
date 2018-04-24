@@ -248,7 +248,7 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
     std::vector<future_queue<int32_t>> vectorOfQueues;
     for(size_t i=0; i<nQueues; ++i) vectorOfQueues.emplace_back(queueLength);
 
-    auto notificationQueue = when_any(vectorOfQueues);
+    auto notificationQueue = when_any(vectorOfQueues.begin(), vectorOfQueues.end());
 
     barrier b1(nQueues+1), b2(nQueues+1);
 

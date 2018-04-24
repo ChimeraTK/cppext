@@ -148,8 +148,8 @@ class future_queue : public detail::future_queue_base {
       atomic_store(&(p->d), r.d);
     }
 
-    template<typename ITERABLE_TYPE>
-    friend future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues);
+    template<typename ITERATOR_TYPE>
+    friend future_queue<size_t> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end);
 
     typedef T value_type;
 
@@ -259,25 +259,25 @@ namespace detail {
 //
 // If data is already available in the queues before calling when_any, the appropriate number of notifications are
 // placed in the notifyer queue in arbitrary order.
-template<typename ITERABLE_TYPE>
-future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues) {
+template<typename ITERATOR_TYPE>
+future_queue<size_t> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end) {
 
     // Add lengthes of all queues - this will be the length of the notification queue
     size_t summedLength = 0;
-    for(auto &queue : listOfQueues) summedLength += queue.size();
+    for(ITERATOR_TYPE it = begin; it != end; ++it) summedLength += it->size();
 
     // Create a notification queue in a shared pointer, so we can hand it on to the queues
     future_queue<size_t> notifyerQueue(summedLength);
 
     // Distribute the pointer to the notification queue to all participating queues
     size_t index = 0;
-    for(auto &queue : listOfQueues) {
-      typedef detail::shared_state<typename std::remove_reference<decltype(queue)>::type::value_type> shared_state_type;
-      auto *shared_state = static_cast<shared_state_type*>(queue.d.get());
+    for(ITERATOR_TYPE it = begin; it != end; ++it) {
+      typedef detail::shared_state<typename std::remove_reference<decltype(*it)>::type::value_type> shared_state_type;
+      auto *shared_state = static_cast<shared_state_type*>(it->d.get());
       atomic_store(&(shared_state->notifyerQueue), notifyerQueue);
       // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
       size_t nPreviousValues = shared_state->notifyerQueue_previousData;
-      queue.d->when_any_index = index;
+      it->d->when_any_index = index;
       for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue.push(index);
       ++index;
     }

@@ -1,11 +1,9 @@
 #ifndef FUTURE_QUEUE_HPP
 #define FUTURE_QUEUE_HPP
 
-#include <list>
 #include <atomic>
 #include <vector>
 #include <cassert>
-#include <map>
 #include <future>     // just for std::launch
 
 #include "semaphore.hpp"

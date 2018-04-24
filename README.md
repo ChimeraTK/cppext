@@ -61,6 +61,7 @@ Some ideas how the future_queue could be extended in future:
 * Extend push_overwrite() for multi producer scenarios.
 * Make it multi consumer (might be difficult!?)
 * Allow switching on and off certain features using template parameters to optimise performance
+* Allow placing exceptions on the queue (cf. std::promise::set_exception())
 
 ## Performance of the current implementation
 The results of the performance test delivered with this library is as follows (on a Intel(R) Core(TM) i5-2500 @ 3.30 GHz):

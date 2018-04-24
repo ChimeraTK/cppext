@@ -50,6 +50,12 @@ int main() {
 }
 ```
 
+## Known issues
+* Bad things will happen if more than std::numeric_limits<size_t>::max write operations have been performed in total, since the internal indices will then overrun. This can be fixed by smarter index handling.
+* Asynchronous continuations launch an internal thread which will not terminate (until the main routine terminates). Some properly working shutdown mechanism has to be found.
+* The "output" queue in an asynchronous continuation might overrun, which is not handled. At least different handling policies should be defined.
+* read_available() and write_available() are unreliable in some situations. Remove them all together?
+
 ## Possible extensions
 Some ideas how the future_queue could be extended in future:
 * Extend push_overwrite() for multi producer scenarios.

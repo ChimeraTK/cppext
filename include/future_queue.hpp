@@ -25,7 +25,6 @@ class future_queue;
 namespace detail {
 
   // Base class for future_queue which does not depend on the template argument. For a description see future_queue.
-  // FIXME protect index handling against overruns of size_t!
   class future_queue_base {
 
     public:
@@ -180,6 +179,7 @@ namespace detail {
     std::vector<semaphore> semaphores;
 
     // index of the element which will be next written
+    // FIXME protect handling of all indices against overruns of size_t!
     std::atomic<size_t> writeIndex;
 
     // maximum index which the receiver is currently allowed to read (after checking it semaphore). Often equal to
@@ -370,7 +370,7 @@ namespace detail {
 
   template<typename T>
   shared_state<T>::~shared_state() {
-    if(is_continuation_async) {
+    if(is_continuation_async) {               // FIXME this is never called, as the async thread still holds the reference!
       continuation_shutdown_async = true;
       continuation_perform_shutdown_async();
       continuation_process_async.join();

@@ -18,7 +18,7 @@ namespace detail {
   struct shared_state;
 }
 
-template<typename T>
+template<typename T, typename FEATURES>
 class future_queue;
 
 /*********************************************************************************************************************/
@@ -60,7 +60,7 @@ namespace detail {
       // pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue).
       std::shared_ptr<shared_state_base> d;
 
-      template<typename T>
+      template<typename T, typename FEATURES>
       friend class ::future_queue;
 
   };
@@ -69,11 +69,19 @@ namespace detail {
 
 /*********************************************************************************************************************/
 
+// feature tag for future_queue: use std::move to store and retreive data to/from the queue
+class MOVE_DATA {};
+
+// feature tag for future_queue: use std::swap to store and retreive data to/from the queue
+class SWAP_DATA {};
+
+/*********************************************************************************************************************/
+
 // A lockfree multi-producer single-consumer queue of a fixed length which the receiver can wait on in case the queue
 // is empty. This is similiar like using a lockfree queue of futures but has better performance. In addition the queue
 // allows the sender to overwrite the last written element in case the queue is full. The receiver can also use the
 // function when_any() to get notified when any of the given future_queues is not empty.
-template<typename T>
+template<typename T, typename FEATURES=MOVE_DATA>
 class future_queue : public detail::future_queue_base {
 
   public:
@@ -112,13 +120,13 @@ class future_queue : public detail::future_queue_base {
     // in the queue by calling has_data() before calling this function.
     const T& front() const;
 
-    friend future_queue<T> atomic_load(const future_queue<T>* p) {
-      future_queue<T> q;
+    friend future_queue<T,FEATURES> atomic_load(const future_queue<T,FEATURES>* p) {
+      future_queue<T,FEATURES> q;
       q.d = std::atomic_load(&(p->d));
       return q;
     }
 
-    friend void atomic_store(future_queue<T>* p, future_queue<T> r) {
+    friend void atomic_store(future_queue<T,FEATURES>* p, future_queue<T,FEATURES> r) {
       atomic_store(&(p->d), r.d);
     }
 
@@ -243,6 +251,28 @@ future_queue<size_t> when_any(ITERABLE_TYPE listOfQueues) {
 
 namespace detail {
 
+  // helper function to realise the data assignment depending on the selected FEATURES tags. The last dummy argument is
+  // just used to realise overloads for the different tags (as C++ does not know partial template specialisations for
+  // functions).
+  template<typename T>
+  void data_assign(T& a, T&& b, MOVE_DATA) {
+    // in order not to depend on the move assignment operator, which might not always be available, we perform an
+    // in-place destruction followed by an in-place move construction.
+    a.~T();
+    new (&a) T(std::move(b));
+  }
+
+  template<typename T>
+  void data_assign(T& a, T&& b, SWAP_DATA) {
+    std::swap(a,b);
+  }
+
+} // namespace detail
+
+/*********************************************************************************************************************/
+
+namespace detail {
+
   size_t future_queue_base::write_available() const {
     size_t l_writeIndex = d->writeIndex;
     size_t l_readIndex = d->readIndex;
@@ -305,19 +335,22 @@ namespace detail {
 
 /*********************************************************************************************************************/
 
-template<typename T>
-future_queue<T>::future_queue(size_t length)
+template<typename T, typename FEATURES>
+future_queue<T,FEATURES>::future_queue(size_t length)
 : future_queue_base(std::make_shared<detail::shared_state<T>>(length))
 {}
 
-template<typename T>
-future_queue<T>::future_queue() {}
+template<typename T, typename FEATURES>
+future_queue<T,FEATURES>::future_queue() {}
 
-template<typename T>
-bool future_queue<T>::push(T&& t) {
+template<typename T, typename FEATURES>
+bool future_queue<T,FEATURES>::push(T&& t) {
   size_t myIndex;
   if(!obtain_write_slot(myIndex)) return false;
-  static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers] = std::move(t);
+  detail::data_assign(
+    static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers],
+    std::move(t), FEATURES()
+  );
   assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
   d->semaphores[myIndex % d->nBuffers].unlock();
   update_read_index_max();
@@ -334,13 +367,13 @@ bool future_queue<T>::push(T&& t) {
   return true;
 }
 
-template<typename T>
-bool future_queue<T>::push(const T& t) {
+template<typename T, typename FEATURES>
+bool future_queue<T,FEATURES>::push(const T& t) {
   return push(T(t));
 }
 
-template<typename T>
-bool future_queue<T>::push_overwrite(T&& t) {
+template<typename T, typename FEATURES>
+bool future_queue<T,FEATURES>::push_overwrite(T&& t) {
   assert(d->nBuffers-1 > 1);
   bool ret = true;
   if(write_available() == 0) {
@@ -354,7 +387,10 @@ bool future_queue<T>::push_overwrite(T&& t) {
     }
     d->writeIndex--;
   }
-  static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->writeIndex%d->nBuffers] = std::move(t);
+  detail::data_assign(
+    static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->writeIndex%d->nBuffers],
+    std::move(t), FEATURES()
+  );
   d->writeIndex++;
   assert(!d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready());
   d->semaphores[(d->writeIndex-1)%d->nBuffers].unlock();
@@ -375,15 +411,19 @@ bool future_queue<T>::push_overwrite(T&& t) {
   return ret;
 }
 
-template<typename T>
-bool future_queue<T>::push_overwrite(const T& t) {
+template<typename T, typename FEATURES>
+bool future_queue<T,FEATURES>::push_overwrite(const T& t) {
   return push_overwrite(T(t));
 }
 
-template<typename T>
-bool future_queue<T>::pop(T& t) {
+template<typename T, typename FEATURES>
+bool future_queue<T,FEATURES>::pop(T& t) {
   if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
-    t = std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]);
+    detail::data_assign(
+      t,
+      std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
+      FEATURES()
+    );
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
     d->hasFrontOwnership = false;
@@ -395,8 +435,8 @@ bool future_queue<T>::pop(T& t) {
   }
 }
 
-template<typename T>
-bool future_queue<T>::pop() {
+template<typename T, typename FEATURES>
+bool future_queue<T,FEATURES>::pop() {
   if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
@@ -409,22 +449,26 @@ bool future_queue<T>::pop() {
   }
 }
 
-template<typename T>
-void future_queue<T>::pop_wait(T& t) {
+template<typename T, typename FEATURES>
+void future_queue<T,FEATURES>::pop_wait(T& t) {
   if(!d->hasFrontOwnership) {
     d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
   }
   else {
     d->hasFrontOwnership = false;
   }
-  t = std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]);
+  detail::data_assign(
+    t,
+    std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
+    FEATURES()
+  );
   assert(d->readIndex < d->writeIndex);
   d->readIndex++;
   static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
 }
 
-template<typename T>
-void future_queue<T>::pop_wait() {
+template<typename T, typename FEATURES>
+void future_queue<T,FEATURES>::pop_wait() {
   if(!d->hasFrontOwnership) {
     d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
   }
@@ -436,8 +480,8 @@ void future_queue<T>::pop_wait() {
   static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
 }
 
-template<typename T>
-const T& future_queue<T>::front() const {
+template<typename T, typename FEATURES>
+const T& future_queue<T,FEATURES>::front() const {
   assert(d->hasFrontOwnership);
   return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
 }

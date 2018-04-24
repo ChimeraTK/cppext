@@ -45,7 +45,7 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 
     future_queue<int> q(5);
 
-    auto qc = q.then<std::string>( [](int x) { return std::to_string(x*10); }, std::launch::async );
+    auto qc = q.then<std::string>( [](int x) { usleep(100000); return std::to_string(x*10); }, std::launch::async );
 
     q.push(1);
     q.push(2);
@@ -55,18 +55,23 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 
     std::string res;
 
+    BOOST_CHECK( qc.has_data() == false);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "10" );
 
+    BOOST_CHECK( qc.has_data() == false);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "20" );
 
+    BOOST_CHECK( qc.has_data() == false);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "30" );
 
+    BOOST_CHECK( qc.has_data() == false);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "40" );
 
+    BOOST_CHECK( qc.has_data() == false);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "50" );
 

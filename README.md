@@ -13,6 +13,7 @@ The future_queue is a thread-safe queue with the following features:
 * push_overwrite(): Overwrite the last element in the queue if the queue is full (only in single-producer context)
 * when_any(): get notified on new data in a given list of future_queues in a well-defined order
 * Shared: Instances are copyable, copies are referring to the same queue.
+* Continuations as an analogy to continuations of futures. Execute a function/lambda for each new value in the queue and push its result into a new queue. Can have different execution policies: std::launch::async (function/lambda runs in separate thread) or std::launch::deferred (function/lambda runs inside the pop() of the resulting queue).
 
 ## Example
 ```C++
@@ -51,7 +52,6 @@ int main() {
 
 ## Possible extensions
 Some ideas how the future_queue could be extended in future:
-* Continuations as an analogy to continuations in futures. Execute a function/lambda for each new value in the queue and push its result into a new queue. Might have different execution policies like async (function/lambda runs in separate thread) or lazy (function/lambda runs inside the pop() of the resulting queue).
 * Extend push_overwrite() for multi producer scenarios.
 * Make it multi consumer (might be difficult!?)
 * Allow switching on and off certain features using template parameters to optimise performance

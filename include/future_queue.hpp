@@ -6,6 +6,7 @@
 #include <vector>
 #include <cassert>
 #include <map>
+#include <future>     // just for std::launch
 
 #include "semaphore.hpp"
 
@@ -120,6 +121,23 @@ class future_queue : public detail::future_queue_base {
     // in the queue by calling has_data() before calling this function.
     const T& front() const;
 
+    // Add continuation: Whenever there is a new element in the queue, process it with the callable and put the result
+    // into a new queue. The new queue will be returned by this function.
+    //
+    // The signature of the callable must be "T2(T)", i.e. it has a single argument of the value type T of the
+    // queue then() is called on, and the return type matches the value type of the returned queue.
+    //
+    // Two different launch policies can be selected:
+    //  - std::launch::async will launch a new thread and trigger data processing asynchronously in the background.
+    //    Each value will be processed in the order they are pushed to the queue and in the same thread.
+    //  - std::launch::deferred will defer data processing until the data is accessed on the resulting queue.
+    //    Checking the presence through has_data() is already counted an access. If the same data is accessed multiple
+    //    times (e.g. by calling front() several times), the callable is only executed once.
+    // If neither std::launch::async (which is the default) nor std::launch::deferred is specified, the behaviour is
+    // undefined.
+    template<typename T2, typename FEATURES2=MOVE_DATA, typename CALLABLE>
+    future_queue<T2,FEATURES2> then(CALLABLE callable, std::launch policy = std::launch::async);
+
     friend future_queue<T,FEATURES> atomic_load(const future_queue<T,FEATURES>* p) {
       future_queue<T,FEATURES> q;
       q.d = std::atomic_load(&(p->d));
@@ -176,6 +194,24 @@ namespace detail {
     // Flag if the receiver has already ownership over the front element. This flag may only be used by the receiver.
     bool hasFrontOwnership;
 
+    // Flag whether this future_queue is a deferred-type continuation of another
+    bool is_continuation_deferred{false};
+
+    // Function to be called for deferred evaulation of a single value if this queue is a continuation
+    std::function<void(void)> continuation_process_deferred;
+
+    // Flag whether this future_queue is a async-type continuation of another
+    bool is_continuation_async{false};
+
+    // Thread handling async-type continuations
+    std::thread continuation_process_async;
+
+    // Flag for shutting down a running continuation_process_async thead
+    std::atomic<bool> continuation_shutdown_async{false};
+
+    // Function to be called for async continuations to shut down the thread
+    std::function<void(void)> continuation_perform_shutdown_async;
+
   };
 
   // Internal class for holding the data which is shared between multiple instances of the same queue. This class is
@@ -185,6 +221,8 @@ namespace detail {
     shared_state(size_t length)
     : shared_state_base(length), buffers(length+1), notifyerQueue_previousData(0)
     {}
+
+    ~shared_state();
 
     // vector of buffers - allocation is done in the constructor
     std::vector<T> buffers;
@@ -290,6 +328,7 @@ namespace detail {
 
   bool future_queue_base::has_data() {
     if(d->hasFrontOwnership) return true;
+    if(d->is_continuation_deferred) d->continuation_process_deferred();
     if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
       d->hasFrontOwnership = true;
       return true;
@@ -329,6 +368,15 @@ namespace detail {
       }
       d->readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
     } while(d->readIndexMax < newReadIndexMax);
+  }
+
+  template<typename T>
+  shared_state<T>::~shared_state() {
+    if(is_continuation_async) {
+      continuation_shutdown_async = true;
+      continuation_perform_shutdown_async();
+      continuation_process_async.join();
+    }
   }
 
 } // namespace detail
@@ -418,6 +466,7 @@ bool future_queue<T,FEATURES>::push_overwrite(const T& t) {
 
 template<typename T, typename FEATURES>
 bool future_queue<T,FEATURES>::pop(T& t) {
+  if(d->is_continuation_deferred && !d->hasFrontOwnership) d->continuation_process_deferred();
   if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
     detail::data_assign(
       t,
@@ -437,6 +486,7 @@ bool future_queue<T,FEATURES>::pop(T& t) {
 
 template<typename T, typename FEATURES>
 bool future_queue<T,FEATURES>::pop() {
+  if(d->is_continuation_deferred && !d->hasFrontOwnership) d->continuation_process_deferred();
   if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
@@ -452,6 +502,7 @@ bool future_queue<T,FEATURES>::pop() {
 template<typename T, typename FEATURES>
 void future_queue<T,FEATURES>::pop_wait(T& t) {
   if(!d->hasFrontOwnership) {
+    if(d->is_continuation_deferred) d->continuation_process_deferred();
     d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
   }
   else {
@@ -470,6 +521,7 @@ void future_queue<T,FEATURES>::pop_wait(T& t) {
 template<typename T, typename FEATURES>
 void future_queue<T,FEATURES>::pop_wait() {
   if(!d->hasFrontOwnership) {
+    if(d->is_continuation_deferred) d->continuation_process_deferred();
     d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
   }
   else {
@@ -484,6 +536,38 @@ template<typename T, typename FEATURES>
 const T& future_queue<T,FEATURES>::front() const {
   assert(d->hasFrontOwnership);
   return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
+}
+
+template<typename T, typename FEATURES>
+template<typename T2, typename FEATURES2, typename CALLABLE>
+future_queue<T2,FEATURES2> future_queue<T,FEATURES>::then(CALLABLE callable, std::launch policy) {
+    future_queue<T,FEATURES> q_input(*this);
+    if(policy == std::launch::deferred) {
+      future_queue<T2,FEATURES2> q_output(1);
+      q_output.d->continuation_process_deferred = std::function<void(void)>( [q_input, q_output, callable] () mutable {
+        T inp;
+        bool got_data = q_input.pop(inp);
+        if(got_data) q_output.push(callable(inp));
+      } );
+      q_output.d->is_continuation_deferred = true;
+      return q_output;
+    }
+    else {
+      future_queue<T2,FEATURES2> q_output(size());
+      q_output.d->continuation_process_async = std::thread( [q_input, q_output, callable] () mutable {
+        while(q_output.d->continuation_shutdown_async == false) {
+          T inp;
+          q_input.pop_wait(inp);
+          q_output.push(callable(inp));
+          // TODO how to handle full output queues?
+        }
+      });
+      q_output.d->continuation_perform_shutdown_async = std::function<void(void)>( [q_input] () mutable {
+        q_input.push(T());
+      });
+      q_output.d->is_continuation_async = true;
+      return q_output;
+    }
 }
 
 #endif // FUTURE_QUEUE_HPP

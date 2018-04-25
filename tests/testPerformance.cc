@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_SUITE(testPerformance)
 BOOST_AUTO_TEST_CASE(future_queue_spin_wait) {
     std::cout << "Measure performance of future_queue with spin-waiting" << std::endl;
 
-    future_queue<int32_t> theQueue(queueLength);
+    cppext::future_queue<int32_t> theQueue(queueLength);
 
     auto start = std::chrono::steady_clock::now();
 
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(boost_spsc_queue_spin_wait) {
 BOOST_AUTO_TEST_CASE(future_queue_pop_wait) {
     std::cout << "Measure performance of future_queue with pop_wait" << std::endl;
 
-    future_queue<int32_t> theQueue(queueLength);
+    cppext::future_queue<int32_t> theQueue(queueLength);
 
     auto start = std::chrono::steady_clock::now();
 
@@ -245,12 +245,12 @@ BOOST_AUTO_TEST_CASE(future_queue_when_any) {
 
     static_assert(nTransfers % nQueues == 0, "nQueues must be an integer divider of nTransfers.");
 
-    std::vector<future_queue<int32_t>> vectorOfQueues;
+    std::vector<cppext::future_queue<int32_t>> vectorOfQueues;
     for(size_t i=0; i<nQueues; ++i) vectorOfQueues.emplace_back(queueLength);
 
     auto notificationQueue = when_any(vectorOfQueues.begin(), vectorOfQueues.end());
 
-    barrier b1(nQueues+1), b2(nQueues+1);
+    cppext::barrier b1(nQueues+1), b2(nQueues+1);
 
     std::vector<std::thread> senders;
     for(auto &q : vectorOfQueues) {
@@ -297,7 +297,7 @@ BOOST_AUTO_TEST_CASE(boost_spsc_queue_wait_for_any) {
       listOfQueues.emplace_back(new boost::lockfree::spsc_queue<boost::shared_future<int32_t>>(queueLength));
     }
 
-    barrier b1(nQueues+1), b2(nQueues+1), b3(nQueues+1);
+    cppext::barrier b1(nQueues+1), b2(nQueues+1), b3(nQueues+1);
 
     std::vector<std::thread> senders;
     for(auto &q : listOfQueues) {

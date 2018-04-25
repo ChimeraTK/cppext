@@ -27,11 +27,11 @@ constexpr int MovableDataType::undef;
 
 BOOST_AUTO_TEST_CASE(testCopyConstruct) {
 
-    future_queue<MovableDataType> queue1(10);
+    cppext::future_queue<MovableDataType> queue1(10);
     BOOST_CHECK_EQUAL(queue1.size(), 10);
     queue1.push(MovableDataType(42));
 
-    future_queue<MovableDataType> queue2(queue1);
+    cppext::future_queue<MovableDataType> queue2(queue1);
     BOOST_CHECK_EQUAL(queue2.size(), 10);
     queue2.push(MovableDataType(43));
     queue1.push(MovableDataType(44));
@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(testCopyConstruct) {
     BOOST_CHECK_EQUAL(x.value(), 46);
 
     {
-      future_queue<MovableDataType> queue3(12);
+      cppext::future_queue<MovableDataType> queue3(12);
       queue3.push(MovableDataType(12345));
       queue1 = queue3;
     }
@@ -63,11 +63,11 @@ BOOST_AUTO_TEST_CASE(testCopyConstruct) {
 
 BOOST_AUTO_TEST_CASE(testVector) {
 
-    std::vector<future_queue<MovableDataType>> vectorOfQueues;
+    std::vector<cppext::future_queue<MovableDataType>> vectorOfQueues;
 
-    future_queue<MovableDataType> queue1(10);
+    cppext::future_queue<MovableDataType> queue1(10);
     vectorOfQueues.push_back(queue1);
-    future_queue<MovableDataType> queue2(8);
+    cppext::future_queue<MovableDataType> queue2(8);
     vectorOfQueues.emplace_back(queue2);
 
     BOOST_CHECK_EQUAL(queue1.size(), 10);

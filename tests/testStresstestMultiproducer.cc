@@ -24,7 +24,7 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducer) {
     shutdownReceiver = false;
 
     // create the queue
-    future_queue<int> q(lengthOfQueue);
+    cppext::future_queue<int> q(lengthOfQueue);
 
     // list of threads so we can collect them later
     std::list<boost::thread> senderThreads;

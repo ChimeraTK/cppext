@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
     // test up to a queue length of 100, start with 1
     for(size_t length=1; length<=100; ++length) {
 
-      future_queue<MovableDataType> q1(length);
+      cppext::future_queue<MovableDataType> q1(length);
 
       { // in combination with discarding pop()
         for(size_t n=0; n<length; ++n) {

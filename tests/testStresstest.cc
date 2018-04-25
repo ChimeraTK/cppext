@@ -33,7 +33,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     std::mt19937 gen(rd());
 
     // create queues, with each a random length
-    std::list<future_queue<int>> qlist;
+    std::list<cppext::future_queue<int>> qlist;
     std::uniform_int_distribution<> qlength(2, 123);
     for(size_t iq=0; iq<nQueues; ++iq) {
       qlist.emplace_back(qlength(gen));
@@ -47,7 +47,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     for(size_t i=0; i<nSenders; ++i) {
 
       // build list of queues
-      std::vector<future_queue<int>> myqueues;
+      std::vector<cppext::future_queue<int>> myqueues;
       for(size_t k=0; k<nQueuesPerSender; ++k) {
         myqueues.emplace_back(*qit);
         ++qit;
@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
     for(size_t i=0; i<nReceivers; ++i) {
 
       // build list of queues and next values to send
-      std::vector<future_queue<int>> myqueues;
+      std::vector<cppext::future_queue<int>> myqueues;
       for(size_t k=0; k<nQueuesPerReceiver; ++k) {
         myqueues.emplace_back(*qit);
         ++qit;

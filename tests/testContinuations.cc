@@ -10,7 +10,7 @@ BOOST_AUTO_TEST_SUITE(testContinuations)
 
 BOOST_AUTO_TEST_CASE(testLazyContinuation) {
 
-    future_queue<int> q(5);
+    cppext::future_queue<int> q(5);
 
     auto qc = q.then<std::string>( [](int x) { return std::to_string(x*10); }, std::launch::deferred );
 
@@ -43,7 +43,7 @@ BOOST_AUTO_TEST_CASE(testLazyContinuation) {
 
 BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 
-    future_queue<int> q(5);
+    cppext::future_queue<int> q(5);
 
     auto qc = q.then<std::string>( [](int x) { usleep(100000); return std::to_string(x*10); }, std::launch::async );
 

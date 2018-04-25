@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 // define future_queue of doubles with a length of 5
-future_queue<double> myQueue(5);
+cppext::future_queue<double> myQueue(5);
 
 // define function sending data in a separate thread
 void senderThread() {

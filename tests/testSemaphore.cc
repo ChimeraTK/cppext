@@ -15,7 +15,7 @@ BOOST_AUTO_TEST_SUITE(TestLatch)
 BOOST_AUTO_TEST_CASE(singleThreaded) {
     std::cout << "singleThreaded" << std::endl;
 
-    semaphore sem;
+    cppext::semaphore sem;
 
     // unlock the semaphore
     BOOST_CHECK(sem.is_ready() == false);
@@ -40,7 +40,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
 BOOST_AUTO_TEST_CASE(multiThreaded) {
     std::cout << "multiThreaded" << std::endl;
 
-    semaphore sem;
+    cppext::semaphore sem;
 
     std::thread waiting( [&sem] {
       BOOST_CHECK_TS(sem.is_ready() == false);

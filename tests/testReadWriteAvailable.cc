@@ -11,7 +11,7 @@ BOOST_AUTO_TEST_SUITE(testReadWriteAvailable)
 BOOST_AUTO_TEST_CASE(singleThreaded) {
 
     for(size_t nbuffers = 1; nbuffers < 100; ++nbuffers) {
-      future_queue<int> q(nbuffers);
+      cppext::future_queue<int> q(nbuffers);
 
       // just single push and pop many times
       BOOST_CHECK_EQUAL(q.read_available(), 0);

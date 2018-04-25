@@ -28,7 +28,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {    // note: multi-threaded test is part o
     for(size_t length=2; length<=10; ++length) {
       for(size_t nqueues=1; nqueues<=10; ++nqueues) {
 
-        std::list<future_queue<MovableDataType>> q;
+        std::list<cppext::future_queue<MovableDataType>> q;
         for(size_t iq=0; iq<nqueues; ++iq) {
           q.emplace_back(length);
         }
@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(calledWithFilledQueues) {
     for(size_t length=2; length<=10; ++length) {
       for(size_t nqueues=1; nqueues<=10; ++nqueues) {
 
-        std::vector<future_queue<MovableDataType>> q;
+        std::vector<cppext::future_queue<MovableDataType>> q;
         for(size_t iq=0; iq<nqueues; ++iq) q.emplace_back(length);
 
         // write once to a single queue

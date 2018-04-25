@@ -14,7 +14,7 @@ BOOST_AUTO_TEST_CASE(testMoving) {
     std::vector<int> b{9,8,7,6,5,4,3,2,1,0};
     std::vector<int> c{1,2,3,4,5,6};
 
-    future_queue<std::vector<int>> movingQueue(2);
+    cppext::future_queue<std::vector<int>> movingQueue(2);
 
     movingQueue.push(std::move(a));
     BOOST_CHECK_EQUAL( a.size(), 0 );
@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(testSwapping) {
     std::vector<int> b = b_orig;
     std::vector<int> c = c_orig;
 
-    future_queue<std::vector<int>, SWAP_DATA> swappingQueue(2);   // size of 2 means 3 internal buffers
+    cppext::future_queue<std::vector<int>, cppext::SWAP_DATA> swappingQueue(2);   // size of 2 means 3 internal buffers
 
     swappingQueue.push(std::move(a));
     BOOST_CHECK_EQUAL( a.size(), 0 );

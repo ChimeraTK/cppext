@@ -119,3 +119,14 @@ Objects of the type ```T``` must be default constructible. Upon creation of the 
 9. ```const T& front() const;```
 
    Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available in the queue by calling ```empty()``` before calling this function.
+   
+### non-member functions
+1. ```template<typename ITERATOR_TYPE> future_queue<size_t> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end);```
+
+   This function expects two forward iterators pointing to a region of a container of ```future_queue``` objects. It returns a ```future_queue``` which will receive the index of each queue relative to the iterator ```begin``` when the respective queue has new data available for reading. This way the returned queue can be used to get notified about each data written to any of the queues. The order of the indices in this queue is guaranteed to be in the same order the data has been written to the queues. If the same queue gets written to multiple times its index will be present in the returned queue the same number of times.
+
+   Behaviour is unspecified if, after the call to ```when_any()```, data is popped from one of the participating queues without retreiving its index previously from the returned queue. Behaviour is also unspecified if the same queue is passed to different calls to this function, or occurres multiple times.
+
+   If ```push_overwrite()``` is used on one of the participating queues, the notifications received through the returned queue might be in a different order (i.e. when data is overwritten, the corresponding queue index is not moved to the correct place later in the notfication queue). Also, a notification for a value written to a queue with ```push_overwrite()``` might appear in the notification queue before the value can be retrieved from the data queue. It is therefore recommended to use ```pop_wait()``` to retrieve the values from the data queues if ```push_overwrite()``` is used. Otherwise failed ```pop()``` have to be retried until the data is received.
+
+   If data is already available in the queues before calling ```when_any()```, the appropriate number of notifications are placed in the notifyer queue in arbitrary order.

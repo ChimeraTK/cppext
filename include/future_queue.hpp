@@ -266,24 +266,25 @@ namespace cppext {
 
   /*********************************************************************************************************************/
 
-  /** Return a future_queue which will receive the future_queue_base::id_t of each queue in listOfQueues when the
+  /** This function expects two forward iterators pointing to a region of a container of future_queue objects. It
+   *  returns a future_queue which will receive the index of each queue relative to the iterator begin when the
    *  respective queue has new data available for reading. This way the returned queue can be used to get notified about
-   *  each data written to any of the queues. The order of the ids in this queue is guaranteed to be in the same order
-   *  the data has been written to the queues. If the same queue gets written to multiple times its id will be present in
-   *  the returned queue the same number of times.
+   *  each data written to any of the queues. The order of the indices in this queue is guaranteed to be in the same
+   *  order the data has been written to the queues. If the same queue gets written to multiple times its index will be
+   *  present in the returned queue the same number of times.
    *
-   *  Behaviour is unspecified if, after the call to when_any, data is popped from one of the queues in the listOfQueues
-   *  without retreiving its id previously from the returned queue. Behaviour is also unspecified if the same queue is
-   *  passed to different calls to this function.
+   *  Behaviour is unspecified if, after the call to when_any(), data is popped from one of the participating queues
+   *  without retreiving its index previously from the returned queue. Behaviour is also unspecified if the same queue
+   *  is passed to different calls to this function, or occurres multiple times.
    *
-   *  If push_overwrite() is used on one of the queues in listOfQueues, the notifications received through the returned
-   *  queue might be in a different order (i.e. when data is overwritten, the corresponding queue id is not moved to
+   *  If push_overwrite() is used on one of the participating queues, the notifications received through the returned
+   *  queue might be in a different order (i.e. when data is overwritten, the corresponding queue index is not moved to
    *  the correct place later in the notfication queue). Also, a notification for a value written to a queue with
-   *  push_overwrite() might appear in the notification queue before the value can be retrieve from the data queue. It is
-   *  therefore recommended to use pop_wait() to retrieve the values from the data queues if push_overwrite() is used->
-   *  Otherwise failed pop() have to be retried until the data is received->
+   *  push_overwrite() might appear in the notification queue before the value can be retrieved from the data queue. It
+   *  is therefore recommended to use pop_wait() to retrieve the values from the data queues if push_overwrite() is
+   *  used. Otherwise failed pop() have to be retried until the data is received.
    *
-   *  If data is already available in the queues before calling when_any, the appropriate number of notifications are
+   *  If data is already available in the queues before calling when_any(), the appropriate number of notifications are
    *  placed in the notifyer queue in arbitrary order. */
   template<typename ITERATOR_TYPE>
   future_queue<size_t> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end) {

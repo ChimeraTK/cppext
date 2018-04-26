@@ -90,7 +90,7 @@ Objects of the type ```T``` must be default constructible. Upon creation of the 
 
 4. ```size_t size() const;```
 
-  Return length of the queue as specified in the constrution.
+   Return length of the queue as specified in the constrution.
 
 5. ```bool push(T&& t);```
 

@@ -72,7 +72,7 @@ Objects of the type ```T``` must be default constructible. Upon creation of the 
 
 4. ```future_queue& operator=(const future_queue &other);```
 
-   Copy assignment operator: After the assignment both *this and the other object will refer to the same queue.
+   Copy assignment operator: After the assignment both ```*this``` and the other object will refer to the same queue.
 
 ### ```future_queue``` public member functions
 

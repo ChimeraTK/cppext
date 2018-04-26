@@ -22,5 +22,8 @@ foreach( testExecutableSrcFile ${testExecutables})
   add_test(${excutableName} ${excutableName})
 endforeach( testExecutableSrcFile )
 
+# generate Doxygen documentation
+include(cmake/enable_doxygen_documentation.cmake)
+
 # enable code coverate report
 include(cmake/enable_code_coverage_report.cmake)

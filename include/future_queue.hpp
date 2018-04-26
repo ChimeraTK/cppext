@@ -38,11 +38,13 @@ namespace cppext {
 
         /** Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
          *  in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
-         * accessing it through pop() or front(), use has_data(). */
+         * accessing it through pop() or front(), use empty(). */
         size_t read_available() const;
 
-        /** Check for the presence of readable data in the queue. */
-        bool has_data();
+        /** Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned),
+         *  temptyion will guarantee that this data can be accessed e.g. thorugh front() or pop(). This guarantee
+         *  holds even if the sender uses pop_overwrite(). */
+        bool empty();
 
         /** return length of the queue */
         size_t size() const;
@@ -140,7 +142,7 @@ namespace cppext {
       void pop_wait();
 
       /** Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
-       * in the queue by calling has_data() before calling this function. */
+       * in the queue by calling empty() before calling this function. */
       const T& front() const;
 
       /** Add continuation: Whenever there is a new element in the queue, process it with the callable and put the result
@@ -153,7 +155,7 @@ namespace cppext {
        *   - std::launch::async will launch a new thread and trigger data processing asynchronously in the background.
        *     Each value will be processed in the order they are pushed to the queue and in the same thread.
        *   - std::launch::deferred will defer data processing until the data is accessed on the resulting queue.
-       *     Checking the presence through has_data() is already counted an access. If the same data is accessed multiple
+       *     Checking the presence through empty() is already counted an access. If the same data is accessed multiple
        *     times (e.g. by calling front() several times), the callable is only executed once.
        *  If neither std::launch::async (which is the default) nor std::launch::deferred is specified, the behaviour is
        *  undefined. */
@@ -350,14 +352,14 @@ namespace cppext {
       return d->readIndexMax - d->readIndex;
     }
 
-    bool future_queue_base::has_data() {
-      if(d->hasFrontOwnership) return true;
+    bool future_queue_base::empty() {
+      if(d->hasFrontOwnership) return false;
       if(d->is_continuation_deferred) d->continuation_process_deferred();
       if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
         d->hasFrontOwnership = true;
-        return true;
+        return false;
       }
-      return false;
+      return true;
     }
 
     size_t future_queue_base::size() const {

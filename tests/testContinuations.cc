@@ -55,23 +55,23 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 
     std::string res;
 
-    BOOST_CHECK( qc.has_data() == false);
+    BOOST_CHECK( qc.empty() == true);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "10" );
 
-    BOOST_CHECK( qc.has_data() == false);
+    BOOST_CHECK( qc.empty() == true);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "20" );
 
-    BOOST_CHECK( qc.has_data() == false);
+    BOOST_CHECK( qc.empty() == true);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "30" );
 
-    BOOST_CHECK( qc.has_data() == false);
+    BOOST_CHECK( qc.empty() == true);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "40" );
 
-    BOOST_CHECK( qc.has_data() == false);
+    BOOST_CHECK( qc.empty() == true);
     qc.pop_wait(res);
     BOOST_CHECK_EQUAL( res, "50" );
 

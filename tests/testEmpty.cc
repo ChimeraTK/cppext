@@ -34,20 +34,20 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
 
       // single value transport
       {
-        BOOST_CHECK_TIMEOUT( q1.has_data() == false );
+        BOOST_CHECK_TIMEOUT( q1.empty() == true );
         std::thread sender( [&q1, length] {
           MovableDataType value( length + 42 );
           BOOST_CHECK_TS( q1.push(std::move(value)) == true );
           BOOST_CHECK_EQUAL_TS( value.value(), MovableDataType::undef );
         } );  // end sender thread
         std::thread receiver( [&q1] {
-          BOOST_CHECK_TIMEOUT( q1.has_data() == true );
+          BOOST_CHECK_TIMEOUT( q1.empty() == false );
         } );  // end receiver thread
         sender.join();
         receiver.join();
-        BOOST_CHECK_TIMEOUT( q1.has_data() == true );
+        BOOST_CHECK_TIMEOUT( q1.empty() == false );
         q1.pop_wait();
-        BOOST_CHECK_TIMEOUT( q1.has_data() == false );
+        BOOST_CHECK_TIMEOUT( q1.empty() == true );
       }
 
     }

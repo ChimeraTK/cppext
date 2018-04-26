@@ -117,7 +117,7 @@ BOOST_AUTO_TEST_CASE(stresstest) {
             size_t id;
             notifyer.pop_wait(id);
             int value;
-            assert(myqueues[id].has_data());
+            assert(myqueues[id].empty() == false);
             bool ret = myqueues[id].pop(value);
             (void)ret;
             assert(ret);

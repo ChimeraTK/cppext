@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
           BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
         }
         for(size_t n=0; n<length; ++n) {
-          BOOST_CHECK( q1.has_data() == true );
+          BOOST_CHECK( q1.empty() == false );
           BOOST_CHECK_EQUAL( q1.front().value(), length + n + 120 );
           q1.pop();
         }
@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
           BOOST_CHECK_EQUAL( value.value(), MovableDataType::undef );
         }
         for(size_t n=0; n<length; ++n) {
-          BOOST_CHECK( q1.has_data() == true );
+          BOOST_CHECK( q1.empty() == false );
           BOOST_CHECK_EQUAL( q1.front().value(), length + n - 120 );
           q1.pop_wait();
         }

@@ -78,7 +78,7 @@ Objects of the type ```T``` must be default constructible. Upon creation of the 
 
 1. ```size_t write_available() const;```
 
-   Number of push operations which can be performed before the queue is full. Note that the result may be inacurate e.g. in multi-producer contexts.
+   Number of push operations which can be performed before the queue is full. Note that the result may be inaccurate e.g. in multi-producer contexts.
 
 2. ```size_t read_available() const;```
 

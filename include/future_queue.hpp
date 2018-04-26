@@ -32,7 +32,8 @@ namespace cppext {
 
       public:
 
-        /** Number of push operations which can be performed before the queue is full. */
+        /** Number of push operations which can be performed before the queue is full. Note that the result may be
+         *  inacurate e.g. in multi-producer contexts. */
         size_t write_available() const;
 
         /** Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate

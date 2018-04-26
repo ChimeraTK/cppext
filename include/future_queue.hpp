@@ -42,8 +42,8 @@ namespace cppext {
         size_t read_available() const;
 
         /** Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned),
-         *  temptyion will guarantee that this data can be accessed e.g. thorugh front() or pop(). This guarantee
-         *  holds even if the sender uses pop_overwrite(). */
+         *  the function will guarantee that this data can be accessed later e.g. thorugh front() or pop(). This
+         *  guarantee holds even if the sender uses pop_overwrite(). */
         bool empty();
 
         /** return length of the queue */

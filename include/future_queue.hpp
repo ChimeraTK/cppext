@@ -39,7 +39,7 @@ namespace cppext {
         /** Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
          *  in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
          * accessing it through pop() or front(), use has_data(). */
-        size_t read_available();
+        size_t read_available() const;
 
         /** Check for the presence of readable data in the queue. */
         bool has_data();
@@ -346,7 +346,7 @@ namespace cppext {
       }
     }
 
-    size_t future_queue_base::read_available() {
+    size_t future_queue_base::read_available() const {
       return d->readIndexMax - d->readIndex;
     }
 

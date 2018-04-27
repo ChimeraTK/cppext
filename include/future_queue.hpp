@@ -47,6 +47,10 @@ namespace cppext {
        * accessing it through pop() or front(), use empty(). */
       size_t read_available() const;
 
+      /** Push an exception pointer (inplace of a value) into the queue. The exception gets thrown by
+       *  pop()/pop_wait()/front() when the receiver reads the corresponding queue element. */
+      bool push_exception(std::exception_ptr exception);
+
       /** Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned),
        *  the function will guarantee that this data can be accessed later e.g. thorugh front() or pop(). This
        *  guarantee holds even if the sender uses pop_overwrite(). */
@@ -209,6 +213,7 @@ namespace cppext {
       shared_state_base(size_t length)
       : nBuffers(length+1),
         semaphores(length+1),
+        exceptions(length+1),
         writeIndex(0),
         readIndexMax(0),
         readIndex(0),
@@ -224,6 +229,9 @@ namespace cppext {
 
       /** vector of semaphores corresponding to the buffers which allows the receiver to wait for new data */
       std::vector<semaphore> semaphores;
+
+      /** vector of exception pointers, can be set instead of values through push_exception() */
+      std::vector<std::exception_ptr> exceptions;
 
       /** index of the element which will be next written
        *  @todo FIXME protect handling of all indices against overruns of size_t! */
@@ -421,6 +429,26 @@ namespace cppext {
     return d->readIndexMax - d->readIndex;
   }
 
+  bool future_queue_base::push_exception(std::exception_ptr exception) {
+    size_t myIndex;
+    if(!obtain_write_slot(myIndex)) return false;
+    d->exceptions[myIndex % d->nBuffers] = exception;
+    assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
+    d->semaphores[myIndex % d->nBuffers].unlock();
+    update_read_index_max();
+    // send notification if requested
+    auto notify = atomic_load(&d->notifyerQueue);
+    if(notify.d) {
+      bool nret = notify.push(d->when_any_index);
+      (void)nret;
+      assert(nret == true);
+    }
+    else {
+      d->notifyerQueue_previousData++;
+    }
+    return true;
+  }
+
   bool future_queue_base::empty() {
     if(d->hasFrontOwnership) return false;
     if(d->is_continuation_deferred) d->continuation_process_deferred();
@@ -495,14 +523,14 @@ namespace cppext {
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
     // send notification if requested
-    auto notify = atomic_load(&static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue);
+    auto notify = atomic_load(&d->notifyerQueue);
     if(notify.d) {
-      bool nret = notify.push(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->when_any_index);
+      bool nret = notify.push(d->when_any_index);
       (void)nret;
       assert(nret == true);
     }
     else {
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData++;
+      d->notifyerQueue_previousData++;
     }
     return true;
   }
@@ -522,14 +550,14 @@ namespace cppext {
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
     // send notification if requested
-    auto notify = atomic_load(&static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue);
+    auto notify = atomic_load(&d->notifyerQueue);
     if(notify.d) {
-      bool nret = notify.push(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->when_any_index);
+      bool nret = notify.push(d->when_any_index);
       (void)nret;
       assert(nret == true);
     }
     else {
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData++;
+      d->notifyerQueue_previousData++;
     }
     return true;
   }
@@ -561,14 +589,14 @@ namespace cppext {
 
     // send notification if requested and if data wasn't overwritten
     if(ret) {
-      auto notify = atomic_load(&static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue);
+      auto notify = atomic_load(&d->notifyerQueue);
       if(notify.d) {
-        bool nret = notify.push(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->when_any_index);
+        bool nret = notify.push(d->when_any_index);
         (void)nret;
         assert(nret == true);
       }
       else {
-        static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData++;
+        d->notifyerQueue_previousData++;
       }
     }
     return ret;
@@ -585,15 +613,22 @@ namespace cppext {
   bool future_queue<T,FEATURES>::pop(U& t) {
     if(d->is_continuation_deferred && !d->hasFrontOwnership) d->continuation_process_deferred();
     if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
-      detail::data_assign(
-        t,
-        std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
-        FEATURES()
-      );
+      std::exception_ptr e;
+      if(d->exceptions[d->readIndex%d->nBuffers]) {
+        e = d->exceptions[d->readIndex%d->nBuffers];
+      }
+      else {
+        detail::data_assign(
+          t,
+          std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
+          FEATURES()
+        );
+      }
       assert(d->readIndex < d->writeIndex);
       d->readIndex++;
       d->hasFrontOwnership = false;
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
+      d->notifyerQueue_previousData--;
+      if(e) std::rethrow_exception(e);
       return true;
     }
     else {
@@ -605,10 +640,15 @@ namespace cppext {
   bool future_queue<T,FEATURES>::pop() {
     if(d->is_continuation_deferred && !d->hasFrontOwnership) d->continuation_process_deferred();
     if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
+      std::exception_ptr e;
+      if(d->exceptions[d->readIndex%d->nBuffers]) {
+        e = d->exceptions[d->readIndex%d->nBuffers];
+      }
       assert(d->readIndex < d->writeIndex);
       d->readIndex++;
       d->hasFrontOwnership = false;
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
+      d->notifyerQueue_previousData--;
+      if(e) std::rethrow_exception(e);
       return true;
     }
     else {
@@ -626,14 +666,21 @@ namespace cppext {
     else {
       d->hasFrontOwnership = false;
     }
-    detail::data_assign(
-      t,
-      std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
-      FEATURES()
-    );
+    std::exception_ptr e;
+    if(d->exceptions[d->readIndex%d->nBuffers]) {
+      e = d->exceptions[d->readIndex%d->nBuffers];
+    }
+    else {
+      detail::data_assign(
+        t,
+        std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
+        FEATURES()
+      );
+    }
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
-    static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
+    d->notifyerQueue_previousData--;
+    if(e) std::rethrow_exception(e);
   }
 
   template<typename T, typename FEATURES>
@@ -645,15 +692,21 @@ namespace cppext {
     else {
       d->hasFrontOwnership = false;
     }
+    std::exception_ptr e;
+    if(d->exceptions[d->readIndex%d->nBuffers]) {
+      e = d->exceptions[d->readIndex%d->nBuffers];
+    }
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
-    static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->notifyerQueue_previousData--;
+    d->notifyerQueue_previousData--;
+    if(e) std::rethrow_exception(e);
   }
 
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   const U& future_queue<T,FEATURES>::front() const {
     assert(d->hasFrontOwnership);
+    if(d->exceptions[d->readIndex%d->nBuffers]) std::rethrow_exception(d->exceptions[d->readIndex%d->nBuffers]);
     return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
   }
 

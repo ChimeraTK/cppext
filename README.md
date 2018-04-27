@@ -27,7 +27,7 @@ The future_queue is a thread-safe queue with the following features:
 #include <unistd.h>
 
 // define future_queue of doubles with a length of 5
-static future_queue<double> myQueue(5);
+static cppext::future_queue<double> myQueue(5);
 
 // define function sending data in a separate thread
 void senderThread() {

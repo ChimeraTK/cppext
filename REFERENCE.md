@@ -18,11 +18,13 @@ class future_queue : public detail::future_queue_base {
     bool push(const T& t);
     bool push_overwrite(T&& t);
     bool push_overwrite(const T& t);
+    bool push_exception(std::exception_ptr exception);
     bool pop(T& t);
     bool pop();
     void pop_wait(T& t);
     void pop_wait();
     bool empty();
+    void wait();
     const T& front() const;
     size_t write_available() const;
     size_t read_available() const;
@@ -101,9 +103,17 @@ Objects of the type ```T``` must be default constructible. Upon creation of the 
 
    Pop object off the queue and store it in ```t```. This function will block until data is available.
 
+5. ```bool push_exception(std::exception_ptr exception);```
+
+   Push an exception pointer (inplace of a value) into the queue. The exception gets thrown by ``pop()``/``pop_wait()``/``front()`` when the receiver reads the corresponding queue element. 
+
 5. ```bool empty();```
 
    Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned), the function will guarantee that this data can be accessed later e.g. thorugh ```front()``` or ```pop()```. This guarantee holds even if the sender uses ```pop_overwrite()```.
+
+6. ```void wait();```
+
+   Wait until the queue is not empty. This function guarantees similar like empty() that after this call data can be accessed e.g. through front() or pop().
 
 6. ```const T& front() const;```
 

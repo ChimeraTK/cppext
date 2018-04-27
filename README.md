@@ -13,6 +13,7 @@ The future_queue is a thread-safe queue with the following features:
 * Multi producer: push() may be called from different threads concurrently on the same queue
 * Single consumer: pop()/pop_wait() may only be called from a single thread at the same time
 * push_overwrite(): Overwrite the last element in the queue if the queue is full (only in single-producer context)
+* Allows placing exceptions on the queue (cf. std::promise::set_exception())
 * when_any(): get notified on new data of any future_queue objects  n a given list, in a well-defined order
 * when_all(): get notified on new data of all future_queue objects in a given list
 * Continuations as an analogy to continuations of futures. Execute a function/lambda for each new value in the queue and push its result into a new queue. Can have different execution policies: std::launch::async (function/lambda runs in separate thread) or std::launch::deferred (function/lambda runs inside the pop() of the resulting queue).
@@ -144,7 +145,6 @@ Some ideas how the future_queue could be extended in future:
 * Extend push_overwrite() for multi producer scenarios.
 * Make it multi consumer (might be difficult!?)
 * Allow switching on and off certain features using template parameters to optimise performance
-* Allow placing exceptions on the queue (cf. std::promise::set_exception())
 
 ## Performance of the current implementation
 The results of the performance test delivered with this library is as follows (on a Intel(R) Core(TM) i5-2500 @ 3.30 GHz):

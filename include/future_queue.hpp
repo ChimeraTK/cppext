@@ -10,6 +10,14 @@
 
 namespace cppext {
 
+/*********************************************************************************************************************/
+
+  /** Feature tag for future_queue: use std::move to store and retreive data to/from the queue */
+  class MOVE_DATA {};
+
+  /** Feature tag for future_queue: use std::swap to store and retreive data to/from the queue */
+  class SWAP_DATA {};
+
   /*********************************************************************************************************************/
 
   namespace detail {
@@ -24,64 +32,58 @@ namespace cppext {
 
   /*********************************************************************************************************************/
 
-  namespace detail {
+  /** Type-independent base class for future_queue which does not depend on the template argument.
+   *  For a description see future_queue. */
+  class future_queue_base {
 
-    /** Base class for future_queue which does not depend on the template argument.
-     *  For a description see future_queue. */
-    class future_queue_base {
+    public:
 
-      public:
+      /** Number of push operations which can be performed before the queue is full. Note that the result may be
+       *  inacurate e.g. in multi-producer contexts. */
+      size_t write_available() const;
 
-        /** Number of push operations which can be performed before the queue is full. Note that the result may be
-         *  inacurate e.g. in multi-producer contexts. */
-        size_t write_available() const;
+      /** Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
+       *  in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
+       * accessing it through pop() or front(), use empty(). */
+      size_t read_available() const;
 
-        /** Number of pop operations which can be performed before the queue is empty. Note that the result can be inaccurate
-         *  in case the sender uses push_overwrite(). If a guarantee is required that a readable element is present before
-         * accessing it through pop() or front(), use empty(). */
-        size_t read_available() const;
+      /** Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned),
+       *  the function will guarantee that this data can be accessed later e.g. thorugh front() or pop(). This
+       *  guarantee holds even if the sender uses pop_overwrite(). */
+      bool empty();
 
-        /** Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned),
-         *  the function will guarantee that this data can be accessed later e.g. thorugh front() or pop(). This
-         *  guarantee holds even if the sender uses pop_overwrite(). */
-        bool empty();
+      /** Wait until the queue is not empty. This function guarantees similar like empty() that after this call data
+       *  can be accessed e.g. through front() or pop(). */
+      void wait();
 
-        /** Wait until the queue is not empty. This function guarantees similar like empty() that after this call data
-         *  can be accessed e.g. through front() or pop(). */
-        void wait();
+      /** return length of the queue */
+      size_t size() const;
 
-        /** return length of the queue */
-        size_t size() const;
+    protected:
 
-      protected:
+      future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_);
 
-        future_queue_base(const std::shared_ptr<shared_state_base> &d_ptr_);
+      future_queue_base();
 
-        future_queue_base();
+      /** reserve next available write slot. Returns false if no free slot is available or true on success. */
+      bool obtain_write_slot(size_t &index);
 
-        /** reserve next available write slot. Returns false if no free slot is available or true on success. */
-        bool obtain_write_slot(size_t &index);
+      /** update readIndexMax after a write operation was completed */
+      void update_read_index_max();
 
-        /** update readIndexMax after a write operation was completed */
-        void update_read_index_max();
+      /** pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue). */
+      std::shared_ptr<detail::shared_state_base> d;
 
-        /** pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue). */
-        std::shared_ptr<shared_state_base> d;
+      template<typename T, typename FEATURES>
+      friend class ::cppext::future_queue;
 
-        template<typename T, typename FEATURES>
-        friend class ::cppext::future_queue;
+      template<typename ITERATOR_TYPE>
+      friend future_queue<size_t,MOVE_DATA> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end);
 
-    };
+      template<typename ITERATOR_TYPE>
+      friend future_queue<void,MOVE_DATA> when_all(ITERATOR_TYPE begin, ITERATOR_TYPE end);
 
-  } // namespace detail
-
-  /*********************************************************************************************************************/
-
-  /** Feature tag for future_queue: use std::move to store and retreive data to/from the queue */
-  class MOVE_DATA {};
-
-  /** Feature tag for future_queue: use std::swap to store and retreive data to/from the queue */
-  class SWAP_DATA {};
+  };
 
   /*********************************************************************************************************************/
 
@@ -105,7 +107,7 @@ namespace cppext {
    *  with default constructed elements.
    */
   template<typename T, typename FEATURES=MOVE_DATA>
-  class future_queue : public detail::future_queue_base {
+  class future_queue : public future_queue_base {
 
     public:
 
@@ -192,12 +194,6 @@ namespace cppext {
         atomic_store(&(p->d), r.d);
       }
 
-      template<typename ITERATOR_TYPE>
-      friend future_queue<size_t> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end);
-
-      template<typename ITERATOR_TYPE>
-      friend future_queue<void> when_all(ITERATOR_TYPE begin, ITERATOR_TYPE end);
-
       typedef T value_type;
 
   };
@@ -216,7 +212,8 @@ namespace cppext {
         writeIndex(0),
         readIndexMax(0),
         readIndex(0),
-        hasFrontOwnership(false)
+        hasFrontOwnership(false),
+        notifyerQueue_previousData(0)
       {}
 
       /** index used in wait_any to identify the queue */
@@ -259,11 +256,12 @@ namespace cppext {
       /** Thread handling async-type continuations */
       std::thread continuation_process_async;
 
-      /** Flag for shutting down a running continuation_process_async thead */
-      std::atomic<bool> continuation_shutdown_async{false};
+      /** Notification queue used to realise a wait_any logic. This queue is shared between all queues participating in
+       *  the same when_any. */
+      future_queue<size_t> notifyerQueue;
 
-      /** Function to be called for async continuations to shut down the thread */
-      std::function<void(void)> continuation_perform_shutdown_async;
+      /** counter for the number of elements in the queue before when_any has added the notifyerQueue */
+      std::atomic<size_t> notifyerQueue_previousData;
 
     };
 
@@ -272,13 +270,11 @@ namespace cppext {
     template<typename T>
     struct shared_state : shared_state_base {
       shared_state(size_t length)
-      : shared_state_base(length), buffers(length+1), notifyerQueue_previousData(0)
+      : shared_state_base(length), buffers(length+1)
       {}
 
       ~shared_state() {
         if(is_continuation_async) {               // FIXME this is never called, as the async thread still holds the reference!
-          continuation_shutdown_async = true;
-          continuation_perform_shutdown_async();
           continuation_process_async.join();
         }
       }
@@ -286,36 +282,20 @@ namespace cppext {
       /** vector of buffers - allocation is done in the constructor */
       std::vector<T> buffers;
 
-      /** Notification queue used to realise a wait_any logic. This queue is shared between all queues participating in
-       *  the same when_any. */
-      future_queue<size_t> notifyerQueue;
-
-      /** counter for the number of elements in the queue before when_any has added the notifyerQueue */
-      std::atomic<size_t> notifyerQueue_previousData;
-
     };
 
     /** Specialisation of the shared_state class for the type void. */
     template<>
     struct shared_state<void> : shared_state_base {
       shared_state(size_t length)
-      : shared_state_base(length), notifyerQueue_previousData(0)
+      : shared_state_base(length)
       {}
 
       ~shared_state() {
         if(is_continuation_async) {               // FIXME this is never called, as the async thread still holds the reference!
-          continuation_shutdown_async = true;
-          continuation_perform_shutdown_async();
           continuation_process_async.join();
         }
       }
-
-      /** Notification queue used to realise a wait_any logic. This queue is shared between all queues participating in
-       *  the same when_any. */
-      future_queue<size_t> notifyerQueue;
-
-      /** counter for the number of elements in the queue before when_any has added the notifyerQueue */
-      std::atomic<size_t> notifyerQueue_previousData;
 
     };
 
@@ -356,11 +336,9 @@ namespace cppext {
       // Distribute the pointer to the notification queue to all participating queues
       size_t index = 0;
       for(ITERATOR_TYPE it = begin; it != end; ++it) {
-        typedef detail::shared_state<typename std::remove_reference<decltype(*it)>::type::value_type> shared_state_type;
-        auto *shared_state = static_cast<shared_state_type*>(it->d.get());
-        atomic_store(&(shared_state->notifyerQueue), notifyerQueue);
+        atomic_store(&(it->d->notifyerQueue), notifyerQueue);
         // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
-        size_t nPreviousValues = shared_state->notifyerQueue_previousData;
+        size_t nPreviousValues = it->d->notifyerQueue_previousData;
         it->d->when_any_index = index;
         for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue.push(index);
         ++index;
@@ -381,7 +359,7 @@ namespace cppext {
       future_queue<void> notifyerQueue(1);
 
       // copy the list of participating queues
-      std::vector<detail::future_queue_base> participants;
+      std::vector<future_queue_base> participants;
       for(auto it=begin; it!=end; ++it) participants.push_back(*it);
 
       notifyerQueue.d->continuation_process_deferred = std::function<void(void)>( [notifyerQueue, participants] () mutable {
@@ -428,75 +406,71 @@ namespace cppext {
 
   /*********************************************************************************************************************/
 
-  namespace detail {
-
-    size_t future_queue_base::write_available() const {
-      size_t l_writeIndex = d->writeIndex;
-      size_t l_readIndex = d->readIndex;
-      if(l_writeIndex - l_readIndex < d->nBuffers-1) {
-        return d->nBuffers - (l_writeIndex - l_readIndex) - 1;
-      }
-      else {
-        return 0;
-      }
+  size_t future_queue_base::write_available() const {
+    size_t l_writeIndex = d->writeIndex;
+    size_t l_readIndex = d->readIndex;
+    if(l_writeIndex - l_readIndex < d->nBuffers-1) {
+      return d->nBuffers - (l_writeIndex - l_readIndex) - 1;
     }
-
-    size_t future_queue_base::read_available() const {
-      return d->readIndexMax - d->readIndex;
+    else {
+      return 0;
     }
+  }
 
-    bool future_queue_base::empty() {
-      if(d->hasFrontOwnership) return false;
-      if(d->is_continuation_deferred) d->continuation_process_deferred();
-      if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
-        d->hasFrontOwnership = true;
-        return false;
-      }
-      return true;
-    }
+  size_t future_queue_base::read_available() const {
+    return d->readIndexMax - d->readIndex;
+  }
 
-    void future_queue_base::wait() {
-      if(d->hasFrontOwnership) return;
-      if(d->is_continuation_deferred) d->continuation_process_deferred_wait();
-      d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
+  bool future_queue_base::empty() {
+    if(d->hasFrontOwnership) return false;
+    if(d->is_continuation_deferred) d->continuation_process_deferred();
+    if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
       d->hasFrontOwnership = true;
+      return false;
     }
+    return true;
+  }
 
-    size_t future_queue_base::size() const {
-      return d->nBuffers - 1;
+  void future_queue_base::wait() {
+    if(d->hasFrontOwnership) return;
+    if(d->is_continuation_deferred) d->continuation_process_deferred_wait();
+    d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
+    d->hasFrontOwnership = true;
+  }
+
+  size_t future_queue_base::size() const {
+    return d->nBuffers - 1;
+  }
+
+  future_queue_base::future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_)
+  : d(d_ptr_) {}
+
+  future_queue_base::future_queue_base() : d(nullptr) {}
+
+  bool future_queue_base::obtain_write_slot(size_t &index) {
+    index = d->writeIndex;
+    while(true) {
+      if(index >= d->readIndex+d->nBuffers - 1) return false;   // queue is full
+      bool success = d->writeIndex.compare_exchange_weak(index, index+1);
+      if(success) break;
     }
+    return true;
+  }
 
-    future_queue_base::future_queue_base(const std::shared_ptr<shared_state_base> &d_ptr_)
-    : d(d_ptr_) {}
-
-    future_queue_base::future_queue_base() : d(nullptr) {}
-
-    bool future_queue_base::obtain_write_slot(size_t &index) {
-      index = d->writeIndex;
-      while(true) {
-        if(index >= d->readIndex+d->nBuffers - 1) return false;   // queue is full
-        bool success = d->writeIndex.compare_exchange_weak(index, index+1);
-        if(success) break;
+  void future_queue_base::update_read_index_max() {
+    size_t l_readIndex = d->readIndex;
+    size_t l_writeIndex = d->writeIndex;
+    size_t l_readIndexMax = d->readIndexMax;
+    if(l_writeIndex >= l_readIndex+d->nBuffers) l_writeIndex = l_readIndex+d->nBuffers-1;
+    size_t newReadIndexMax = l_readIndexMax;
+    do {
+      for(size_t index = l_readIndexMax; index <= l_writeIndex-1; ++index) {
+        if(!d->semaphores[index % d->nBuffers].is_ready()) break;
+        newReadIndexMax = index+1;
       }
-      return true;
-    }
-
-    void future_queue_base::update_read_index_max() {
-      size_t l_readIndex = d->readIndex;
-      size_t l_writeIndex = d->writeIndex;
-      size_t l_readIndexMax = d->readIndexMax;
-      if(l_writeIndex >= l_readIndex+d->nBuffers) l_writeIndex = l_readIndex+d->nBuffers-1;
-      size_t newReadIndexMax = l_readIndexMax;
-      do {
-        for(size_t index = l_readIndexMax; index <= l_writeIndex-1; ++index) {
-          if(!d->semaphores[index % d->nBuffers].is_ready()) break;
-          newReadIndexMax = index+1;
-        }
-        d->readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
-      } while(d->readIndexMax < newReadIndexMax);
-    }
-
-  } // namespace detail
+      d->readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
+    } while(d->readIndexMax < newReadIndexMax);
+  }
 
   /*********************************************************************************************************************/
 
@@ -683,6 +657,108 @@ namespace cppext {
     return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
   }
 
+  namespace detail {
+    // helper functions used inside future_queue::then() - needed instead of a lambda since T might be void
+    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    struct continuation_process_deferred {
+      continuation_process_deferred(future_queue<T,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        T inp;
+        bool got_data = q_input.pop(inp);
+        if(got_data) q_output.push(callable(inp));
+      }
+      future_queue<T,FEATURES> q_input;
+      QOUT q_output;
+      CALLABLE callable;
+    };
+    template<typename FEATURES, typename QOUT, typename CALLABLE>
+    struct continuation_process_deferred<void, FEATURES, QOUT, CALLABLE> {
+      continuation_process_deferred(future_queue<void,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        bool got_data = q_input.pop();
+        if(got_data) q_output.push(callable());
+      }
+      future_queue<void,FEATURES> q_input;
+      QOUT q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    continuation_process_deferred<T,FEATURES,QOUT,CALLABLE> make_continuation_process_deferred(
+        future_queue<T,FEATURES> q_input, QOUT q_output, CALLABLE callable) {
+      return {q_input,q_output,callable};
+    }
+
+    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    struct continuation_process_deferred_wait {
+      continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        T inp;
+        q_input.pop_wait(inp);
+        q_output.push(callable(inp));
+      }
+      future_queue<T,FEATURES> q_input;
+      QOUT q_output;
+      CALLABLE callable;
+    };
+    template<typename FEATURES, typename QOUT, typename CALLABLE>
+    struct continuation_process_deferred_wait<void, FEATURES, QOUT, CALLABLE> {
+      continuation_process_deferred_wait(future_queue<void,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        q_input.pop_wait();
+        q_output.push(callable());
+      }
+      future_queue<void,FEATURES> q_input;
+      QOUT q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    continuation_process_deferred_wait<T,FEATURES,QOUT,CALLABLE> make_continuation_process_deferred_wait(
+        future_queue<T,FEATURES> q_input, QOUT q_output, CALLABLE callable) {
+      return {q_input,q_output,callable};
+    }
+
+    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    struct continuation_process_async {
+      continuation_process_async(future_queue<T,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        while(true) {         // FIXME how to shutdown properly
+          T inp;
+          q_input.pop_wait(inp);
+          q_output.push(callable(inp));
+          // TODO how to handle full output queues?
+        }
+      }
+      future_queue<T,FEATURES> q_input;
+      QOUT q_output;
+      CALLABLE callable;
+    };
+    template<typename FEATURES, typename QOUT, typename CALLABLE>
+    struct continuation_process_async<void, FEATURES, QOUT, CALLABLE> {
+      continuation_process_async(future_queue<void,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        while(true) {        // FIXME how to shutdown properly
+          q_input.pop_wait();
+          q_output.push(callable());
+          // TODO how to handle full output queues?
+        }
+      }
+      future_queue<void,FEATURES> q_input;
+      QOUT q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    continuation_process_async<T,FEATURES,QOUT,CALLABLE> make_continuation_process_async(
+        future_queue<T,FEATURES> q_input, QOUT q_output, CALLABLE callable) {
+      return {q_input,q_output,callable};
+    }
+  } // namespace detail
+
   template<typename T, typename FEATURES>
   template<typename T2, typename FEATURES2, typename CALLABLE>
   future_queue<T2,FEATURES2> future_queue<T,FEATURES>::then(CALLABLE callable, std::launch policy) {
@@ -690,34 +766,15 @@ namespace cppext {
       if(policy == std::launch::deferred) {
         future_queue<T2,FEATURES2> q_output(1);
 
-        q_output.d->continuation_process_deferred = std::function<void(void)>( [q_input, q_output, callable] () mutable {
-          T inp;
-          bool got_data = q_input.pop(inp);
-          if(got_data) q_output.push(callable(inp));
-        } );
-
-        q_output.d->continuation_process_deferred_wait = std::function<void(void)>( [q_input, q_output, callable] () mutable {
-          T inp;
-          q_input.pop_wait(inp);
-          q_output.push(callable(inp));
-        } );
+        q_output.d->continuation_process_deferred = detail::make_continuation_process_deferred(q_input, q_output, callable);
+        q_output.d->continuation_process_deferred_wait = detail::make_continuation_process_deferred_wait(q_input, q_output, callable);
 
         q_output.d->is_continuation_deferred = true;
         return q_output;
       }
       else {
         future_queue<T2,FEATURES2> q_output(size());
-        q_output.d->continuation_process_async = std::thread( [q_input, q_output, callable] () mutable {
-          while(q_output.d->continuation_shutdown_async == false) {
-            T inp;
-            q_input.pop_wait(inp);
-            q_output.push(callable(inp));
-            // TODO how to handle full output queues?
-          }
-        });
-        q_output.d->continuation_perform_shutdown_async = std::function<void(void)>( [q_input] () mutable {
-          q_input.push(T());
-        });
+        q_output.d->continuation_process_async = std::thread(detail::make_continuation_process_async(q_input, q_output, callable));
         q_output.d->is_continuation_async = true;
         return q_output;
       }

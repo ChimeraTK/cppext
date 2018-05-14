@@ -1,9 +1,6 @@
 # future_queue
 A proof-of-concept implementation of a thread synchronisation primitive for C++ 11. It can be described as a mixture of the concepts of futures and (lockfree) queues.
 
-[![Build Status](https://travis-ci.org/mhier/future_queue.svg?branch=master)](https://travis-ci.org/mhier/future_queue)
-[![codecov](https://codecov.io/gh/mhier/future_queue/branch/master/graph/badge.svg)](https://codecov.io/gh/mhier/future_queue)
-
 For the reference documentation, see [future_queue_reference.md](future_queue_reference.md)
 
 ## Features

@@ -1,4 +1,4 @@
-project(future_queue_tests)
+project(cppext)
 cmake_minimum_required(VERSION 2.8)
 
 # find BOOST libraries

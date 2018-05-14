@@ -3,6 +3,6 @@ A collection of C++ classes which are quite fundamental and thus considered insi
 
 The following classes are packaged inside this library:
 
-* future_queue (see [future_queue.md](future_queue.md)
+* future_queue (see [future_queue.md](future_queue.md))
 * semaphore (documentation still missing)
 * latch (documentation still missing)

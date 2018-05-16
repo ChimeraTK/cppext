@@ -1,13 +1,21 @@
 project(cppext)
 cmake_minimum_required(VERSION 2.8)
 
-# find BOOST libraries
+set(${PROJECT_NAME}_MAJOR_VERSION 01)
+set(${PROJECT_NAME}_MINOR_VERSION 00)
+set(${PROJECT_NAME}_PATCH_VERSION 00)
+include(cmake/set_version_numbers.cmake)
+
+# find BOOST libraries (needed for tests only)
 find_package(Boost COMPONENTS unit_test_framework system thread REQUIRED)
-find_package (Threads REQUIRED)
+find_package(Threads REQUIRED)
 
 # Moderate version of the compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -fPIC -Wextra -Wuninitialized")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -Wextra -Wuninitialized")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -fno-inline")
+
+# add support for latest C++ standard to compiler flags
+include(cmake/enable_latest_cxx_support.cmake)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -27,3 +35,14 @@ include(cmake/enable_doxygen_documentation.cmake)
 
 # enable code coverate report
 include(cmake/enable_code_coverage_report.cmake)
+
+# install header files
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/include DESTINATION include/ChimeraTK/cppext
+                                                  FILES_MATCHING PATTERN "*.hpp")
+
+# Create cmake configuration files for downstream projects
+set(${PROJECT_NAME}_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
+set(${PROJECT_NAME}_LIBRARIES "")
+set(${PROJECT_NAME}_LIBRARY_DIRS "")
+# already set: ${PROJECT_NAME}_CXX_FLAGS
+include(${CMAKE_SOURCE_DIR}/cmake/create_cmake_config_files.cmake)

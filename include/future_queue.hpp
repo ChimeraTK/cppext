@@ -712,9 +712,9 @@ namespace cppext {
 
   namespace detail {
     // helper functions used inside future_queue::then() - needed instead of a lambda since T might be void
-    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred {
-      continuation_process_deferred(future_queue<T,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      continuation_process_deferred(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         T inp;
@@ -722,30 +722,43 @@ namespace cppext {
         if(got_data) q_output.push(callable(inp));
       }
       future_queue<T,FEATURES> q_input;
-      QOUT q_output;
+      future_queue<TOUT> q_output;
       CALLABLE callable;
     };
-    template<typename FEATURES, typename QOUT, typename CALLABLE>
-    struct continuation_process_deferred<void, FEATURES, QOUT, CALLABLE> {
-      continuation_process_deferred(future_queue<void,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+    template<typename FEATURES, typename TOUT, typename CALLABLE>
+    struct continuation_process_deferred<void, FEATURES, TOUT, CALLABLE> {
+      continuation_process_deferred(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         bool got_data = q_input.pop();
         if(got_data) q_output.push(callable());
       }
       future_queue<void,FEATURES> q_input;
-      QOUT q_output;
+      future_queue<TOUT> q_output;
       CALLABLE callable;
     };
-    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
-    continuation_process_deferred<T,FEATURES,QOUT,CALLABLE> make_continuation_process_deferred(
-        future_queue<T,FEATURES> q_input, QOUT q_output, CALLABLE callable) {
+    template<typename FEATURES, typename CALLABLE>
+    struct continuation_process_deferred<void, FEATURES, void, CALLABLE> {
+      continuation_process_deferred(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        bool got_data = q_input.pop();
+        callable();
+        if(got_data) q_output.push();
+      }
+      future_queue<void,FEATURES> q_input;
+      future_queue<void> q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
+    continuation_process_deferred<T,FEATURES,TOUT,CALLABLE> make_continuation_process_deferred(
+        future_queue<T,FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input,q_output,callable};
     }
 
-    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred_wait {
-      continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         T inp;
@@ -753,30 +766,43 @@ namespace cppext {
         q_output.push(callable(inp));
       }
       future_queue<T,FEATURES> q_input;
-      QOUT q_output;
+      future_queue<TOUT> q_output;
       CALLABLE callable;
     };
-    template<typename FEATURES, typename QOUT, typename CALLABLE>
-    struct continuation_process_deferred_wait<void, FEATURES, QOUT, CALLABLE> {
-      continuation_process_deferred_wait(future_queue<void,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+    template<typename FEATURES, typename TOUT, typename CALLABLE>
+    struct continuation_process_deferred_wait<void, FEATURES, TOUT, CALLABLE> {
+      continuation_process_deferred_wait(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         q_input.pop_wait();
         q_output.push(callable());
       }
       future_queue<void,FEATURES> q_input;
-      QOUT q_output;
+      future_queue<TOUT> q_output;
       CALLABLE callable;
     };
-    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
-    continuation_process_deferred_wait<T,FEATURES,QOUT,CALLABLE> make_continuation_process_deferred_wait(
-        future_queue<T,FEATURES> q_input, QOUT q_output, CALLABLE callable) {
+    template<typename FEATURES, typename CALLABLE>
+    struct continuation_process_deferred_wait<void, FEATURES, void, CALLABLE> {
+      continuation_process_deferred_wait(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        q_input.pop_wait();
+        callable();
+        q_output.push();
+      }
+      future_queue<void,FEATURES> q_input;
+      future_queue<void> q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
+    continuation_process_deferred_wait<T,FEATURES,TOUT,CALLABLE> make_continuation_process_deferred_wait(
+        future_queue<T,FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input,q_output,callable};
     }
 
-    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_async {
-      continuation_process_async(future_queue<T,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+      continuation_process_async(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         while(true) {         // FIXME how to shutdown properly
@@ -787,12 +813,12 @@ namespace cppext {
         }
       }
       future_queue<T,FEATURES> q_input;
-      QOUT q_output;
+      future_queue<TOUT> q_output;
       CALLABLE callable;
     };
-    template<typename FEATURES, typename QOUT, typename CALLABLE>
-    struct continuation_process_async<void, FEATURES, QOUT, CALLABLE> {
-      continuation_process_async(future_queue<void,FEATURES> q_input_, QOUT q_output_, CALLABLE callable_)
+    template<typename FEATURES, typename TOUT, typename CALLABLE>
+    struct continuation_process_async<void, FEATURES, TOUT, CALLABLE> {
+      continuation_process_async(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         while(true) {        // FIXME how to shutdown properly
@@ -802,12 +828,28 @@ namespace cppext {
         }
       }
       future_queue<void,FEATURES> q_input;
-      QOUT q_output;
+      future_queue<TOUT> q_output;
       CALLABLE callable;
     };
-    template<typename T, typename FEATURES, typename QOUT, typename CALLABLE>
-    continuation_process_async<T,FEATURES,QOUT,CALLABLE> make_continuation_process_async(
-        future_queue<T,FEATURES> q_input, QOUT q_output, CALLABLE callable) {
+    template<typename FEATURES, typename CALLABLE>
+    struct continuation_process_async<void, FEATURES, void, CALLABLE> {
+      continuation_process_async(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        while(true) {        // FIXME how to shutdown properly
+          q_input.pop_wait();
+          callable();
+          q_output.push();
+          // TODO how to handle full output queues?
+        }
+      }
+      future_queue<void,FEATURES> q_input;
+      future_queue<void> q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
+    continuation_process_async<T,FEATURES,TOUT,CALLABLE> make_continuation_process_async(
+        future_queue<T,FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input,q_output,callable};
     }
   } // namespace detail

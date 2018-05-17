@@ -79,4 +79,26 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 
 /*********************************************************************************************************************/
 
+BOOST_AUTO_TEST_CASE(testLazyContinuation_void) {
+
+    cppext::future_queue<void> q(5);
+
+    auto qc = q.then<void>( [] { return; }, std::launch::deferred );
+
+    q.push();
+    q.push();
+    q.push();
+    q.push();
+    q.push();
+
+    BOOST_CHECK( qc.pop() == true );
+    BOOST_CHECK( qc.pop() == true );
+    BOOST_CHECK( qc.pop() == true );
+    BOOST_CHECK( qc.pop() == true );
+    BOOST_CHECK( qc.pop() == true );
+
+}
+
+/*********************************************************************************************************************/
+
 BOOST_AUTO_TEST_SUITE_END()

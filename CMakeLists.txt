@@ -37,7 +37,7 @@ include(cmake/enable_doxygen_documentation.cmake)
 include(cmake/enable_code_coverage_report.cmake)
 
 # install header files
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/include DESTINATION include/ChimeraTK/cppext
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION include/ChimeraTK/cppext
                                                   FILES_MATCHING PATTERN "*.hpp")
 
 # Create cmake configuration files for downstream projects

@@ -11,8 +11,19 @@ BOOST_AUTO_TEST_SUITE(testContinuations)
 BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
 
     cppext::future_queue<int> q(5);
+    std::atomic<size_t> continuationCounter;
+    continuationCounter = 0;
 
-    auto qc = q.then<std::string>( [](int x) { return std::to_string(x*10); }, std::launch::deferred );
+    auto qc = q.then<std::string>( [&continuationCounter](int x) {
+      ++continuationCounter;
+      return std::to_string(x*10);
+    }, std::launch::deferred );
+
+    usleep(100000);
+    BOOST_CHECK(qc.empty() == true);
+    BOOST_CHECK_EQUAL( continuationCounter, 0 );
+    BOOST_CHECK(qc.pop() == false);
+    BOOST_CHECK_EQUAL( continuationCounter, 0 );
 
     q.push(1);
     q.push(2);
@@ -44,31 +55,49 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
 BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
 
     cppext::future_queue<int> q(5);
+    std::atomic<size_t> continuationCounter;
+    continuationCounter = 0;
 
-    auto qc = q.then<std::string>( [](int x) { return std::to_string(x*10); }, std::launch::deferred );
+    auto qc = q.then<std::string>( [&continuationCounter](int x) {
+      ++continuationCounter;
+      return std::to_string(x*10);
+    }, std::launch::deferred );
+
+    usleep(100000);
+    BOOST_CHECK(qc.empty() == true);
+    BOOST_CHECK_EQUAL( continuationCounter, 0 );
 
     std::thread sender( [&q] {
       for(int i=1; i<6; ++i) {
-        q.push(i);
         usleep(100000);
+        q.push(i);
       }
     } );
 
     std::string res;
 
+    BOOST_CHECK_EQUAL( continuationCounter, 0 );
     qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( continuationCounter, 1 );
     BOOST_CHECK_EQUAL( res, "10" );
 
     qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( continuationCounter, 2 );
     BOOST_CHECK_EQUAL( res, "20" );
 
     qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( continuationCounter, 3 );
     BOOST_CHECK_EQUAL( res, "30" );
 
     qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( continuationCounter, 4 );
     BOOST_CHECK_EQUAL( res, "40" );
 
+    usleep(200000);
+    BOOST_CHECK_EQUAL( continuationCounter, 4 );
+
     qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( continuationCounter, 5 );
     BOOST_CHECK_EQUAL( res, "50" );
 
     sender.join();
@@ -118,8 +147,19 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 BOOST_AUTO_TEST_CASE(testLazyContinuation_void) {
 
     cppext::future_queue<void> q(5);
+    std::atomic<size_t> continuationCounter;
+    continuationCounter = 0;
 
-    auto qc = q.then<void>( [] { return; }, std::launch::deferred );
+    auto qc = q.then<void>( [&continuationCounter] {
+      ++continuationCounter;
+      return;
+    }, std::launch::deferred );
+
+    usleep(100000);
+    BOOST_CHECK(qc.empty() == true);
+    BOOST_CHECK_EQUAL( continuationCounter, 0 );
+    BOOST_CHECK(qc.pop() == false);
+    BOOST_CHECK_EQUAL( continuationCounter, 0 );
 
     q.push();
     q.push();

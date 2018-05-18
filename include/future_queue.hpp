@@ -743,8 +743,10 @@ namespace cppext {
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         bool got_data = q_input.pop();
-        callable();
-        if(got_data) q_output.push();
+        if(got_data) {
+          callable();
+          q_output.push();
+        }
       }
       future_queue<void,FEATURES> q_input;
       future_queue<void> q_output;
@@ -860,10 +862,8 @@ namespace cppext {
       future_queue<T,FEATURES> q_input(*this);
       if(policy == std::launch::deferred) {
         future_queue<T2,FEATURES2> q_output(1);
-
         q_output.d->continuation_process_deferred = detail::make_continuation_process_deferred(q_input, q_output, callable);
         q_output.d->continuation_process_deferred_wait = detail::make_continuation_process_deferred_wait(q_input, q_output, callable);
-
         q_output.d->is_continuation_deferred = true;
         return q_output;
       }

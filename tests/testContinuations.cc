@@ -8,7 +8,7 @@ BOOST_AUTO_TEST_SUITE(testContinuations)
 
 /*********************************************************************************************************************/
 
-BOOST_AUTO_TEST_CASE(testLazyContinuation) {
+BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
 
     cppext::future_queue<int> q(5);
 
@@ -36,6 +36,42 @@ BOOST_AUTO_TEST_CASE(testLazyContinuation) {
 
     qc.pop(res);
     BOOST_CHECK_EQUAL( res, "50" );
+
+}
+
+/*********************************************************************************************************************/
+
+BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
+
+    cppext::future_queue<int> q(5);
+
+    auto qc = q.then<std::string>( [](int x) { return std::to_string(x*10); }, std::launch::deferred );
+
+    std::thread sender( [&q] {
+      for(int i=1; i<6; ++i) {
+        q.push(i);
+        usleep(100000);
+      }
+    } );
+
+    std::string res;
+
+    qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( res, "10" );
+
+    qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( res, "20" );
+
+    qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( res, "30" );
+
+    qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( res, "40" );
+
+    qc.pop_wait(res);
+    BOOST_CHECK_EQUAL( res, "50" );
+
+    sender.join();
 
 }
 

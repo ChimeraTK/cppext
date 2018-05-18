@@ -48,7 +48,7 @@ BOOST_AUTO_TEST_CASE(multiThreaded) {
     } );  // end waiting thread
 
     std::thread down_counting( [&sem] {
-      usleep(10000);
+      usleep(100000);
       sem.unlock();
     } );  // end down_counting thread
 

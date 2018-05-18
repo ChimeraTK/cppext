@@ -414,7 +414,7 @@ namespace cppext {
 
   /*********************************************************************************************************************/
 
-  size_t future_queue_base::write_available() const {
+  inline size_t future_queue_base::write_available() const {
     size_t l_writeIndex = d->writeIndex;
     size_t l_readIndex = d->readIndex;
     if(l_writeIndex - l_readIndex < d->nBuffers-1) {
@@ -425,11 +425,11 @@ namespace cppext {
     }
   }
 
-  size_t future_queue_base::read_available() const {
+  inline size_t future_queue_base::read_available() const {
     return d->readIndexMax - d->readIndex;
   }
 
-  bool future_queue_base::push_exception(std::exception_ptr exception) {
+  inline bool future_queue_base::push_exception(std::exception_ptr exception) {
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
     d->exceptions[myIndex % d->nBuffers] = exception;
@@ -449,7 +449,7 @@ namespace cppext {
     return true;
   }
 
-  bool future_queue_base::empty() {
+  inline bool future_queue_base::empty() {
     if(d->hasFrontOwnership) return false;
     if(d->is_continuation_deferred) d->continuation_process_deferred();
     if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
@@ -459,23 +459,23 @@ namespace cppext {
     return true;
   }
 
-  void future_queue_base::wait() {
+  inline void future_queue_base::wait() {
     if(d->hasFrontOwnership) return;
     if(d->is_continuation_deferred) d->continuation_process_deferred_wait();
     d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
     d->hasFrontOwnership = true;
   }
 
-  size_t future_queue_base::size() const {
+  inline size_t future_queue_base::size() const {
     return d->nBuffers - 1;
   }
 
-  future_queue_base::future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_)
+  inline future_queue_base::future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_)
   : d(d_ptr_) {}
 
-  future_queue_base::future_queue_base() : d(nullptr) {}
+  inline future_queue_base::future_queue_base() : d(nullptr) {}
 
-  bool future_queue_base::obtain_write_slot(size_t &index) {
+  inline bool future_queue_base::obtain_write_slot(size_t &index) {
     index = d->writeIndex;
     while(true) {
       if(index >= d->readIndex+d->nBuffers - 1) return false;   // queue is full
@@ -485,7 +485,7 @@ namespace cppext {
     return true;
   }
 
-  void future_queue_base::update_read_index_max() {
+  inline void future_queue_base::update_read_index_max() {
     size_t l_readIndex = d->readIndex;
     size_t l_writeIndex = d->writeIndex;
     size_t l_readIndexMax = d->readIndexMax;

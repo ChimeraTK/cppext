@@ -717,9 +717,10 @@ namespace cppext {
       continuation_process_deferred(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        T inp;
-        bool got_data = q_input.pop(inp);
-        if(got_data) q_output.push(callable(inp));
+        // written this way so the callable is able to swap with the internal buffer
+        if(q_input.empty()) return;
+        q_output.push(callable(q_input.front()));
+        q_input.pop();
       }
       future_queue<T,FEATURES> q_input;
       future_queue<TOUT> q_output;
@@ -735,6 +736,21 @@ namespace cppext {
       }
       future_queue<void,FEATURES> q_input;
       future_queue<TOUT> q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename CALLABLE>
+    struct continuation_process_deferred<T, FEATURES, void, CALLABLE> {
+      continuation_process_deferred(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        // written this way so the callable is able to swap with the internal buffer
+        if(q_input.empty()) return;
+        callable(q_input.front());
+        q_output.push();
+        q_input.pop();
+      }
+      future_queue<T,FEATURES> q_input;
+      future_queue<void> q_output;
       CALLABLE callable;
     };
     template<typename FEATURES, typename CALLABLE>
@@ -763,9 +779,10 @@ namespace cppext {
       continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        T inp;
-        q_input.pop_wait(inp);
-        q_output.push(callable(inp));
+        // written this way so the callable is able to swap with the internal buffer
+        q_input.wait();
+        q_output.push(callable(q_input.front()));
+        q_input.pop();
       }
       future_queue<T,FEATURES> q_input;
       future_queue<TOUT> q_output;
@@ -781,6 +798,21 @@ namespace cppext {
       }
       future_queue<void,FEATURES> q_input;
       future_queue<TOUT> q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename CALLABLE>
+    struct continuation_process_deferred_wait<T, FEATURES, void, CALLABLE> {
+      continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        // written this way so the callable is able to swap with the internal buffer
+        q_input.wait();
+        callable(q_input.front());
+        q_output.push();
+        q_input.pop();
+      }
+      future_queue<T,FEATURES> q_input;
+      future_queue<void> q_output;
       CALLABLE callable;
     };
     template<typename FEATURES, typename CALLABLE>
@@ -808,9 +840,10 @@ namespace cppext {
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         while(true) {         // FIXME how to shutdown properly
-          T inp;
-          q_input.pop_wait(inp);
-          q_output.push(callable(inp));
+          // written this way so the callable is able to swap with the internal buffer
+          q_input.wait();
+          q_output.push(callable(q_input.front()));
+          q_input.pop();
           // TODO how to handle full output queues?
         }
       }
@@ -831,6 +864,24 @@ namespace cppext {
       }
       future_queue<void,FEATURES> q_input;
       future_queue<TOUT> q_output;
+      CALLABLE callable;
+    };
+    template<typename T, typename FEATURES, typename CALLABLE>
+    struct continuation_process_async<T, FEATURES, void, CALLABLE> {
+      continuation_process_async(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
+      : q_input(q_input_), q_output(q_output_), callable(callable_) {}
+      void operator()() {
+        while(true) {         // FIXME how to shutdown properly
+          // written this way so the callable is able to swap with the internal buffer
+          q_input.wait();
+          callable(q_input.front());
+          q_output.push();
+          q_input.pop();
+          // TODO how to handle full output queues?
+        }
+      }
+      future_queue<T,FEATURES> q_input;
+      future_queue<void> q_output;
       CALLABLE callable;
     };
     template<typename FEATURES, typename CALLABLE>

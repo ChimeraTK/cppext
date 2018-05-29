@@ -170,6 +170,8 @@ namespace cppext {
        * in the queue by calling empty() before calling this function. */
       template<typename U=T, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type = 0>
       const U& front() const;
+      template<typename U=T, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type = 0>
+      U& front();
 
       /** Add continuation: Whenever there is a new element in the queue, process it with the callable and put the result
        *  into a new queue. The new queue will be returned by this function.
@@ -705,6 +707,14 @@ namespace cppext {
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   const U& future_queue<T,FEATURES>::front() const {
+    assert(d->hasFrontOwnership);
+    if(d->exceptions[d->readIndex%d->nBuffers]) std::rethrow_exception(d->exceptions[d->readIndex%d->nBuffers]);
+    return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
+  }
+
+  template<typename T, typename FEATURES>
+  template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
+  U& future_queue<T,FEATURES>::front() {
     assert(d->hasFrontOwnership);
     if(d->exceptions[d->readIndex%d->nBuffers]) std::rethrow_exception(d->exceptions[d->readIndex%d->nBuffers]);
     return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];

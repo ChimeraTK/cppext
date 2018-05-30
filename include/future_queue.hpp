@@ -133,7 +133,8 @@ namespace cppext {
       /** Push object t to the queue. Returns true if successful and false if queue is full. */
       template<typename U=T, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type = 0>
       bool push(U&& t);
-      template<typename U=T, typename std::enable_if< !std::is_same<U, void>::value, int >::type = 0>
+      template<typename U=T, typename std::enable_if< !std::is_same<U, void>::value
+                                                      && std::is_copy_constructible<T>::value, int >::type = 0>
       bool push(const U& t);
 
       /** This version of push() is valid only for T=void */
@@ -148,7 +149,8 @@ namespace cppext {
       template<typename U=T, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type = 0>
       bool push_overwrite(U&& t);
 
-      template<typename U=T, typename std::enable_if< !std::is_same<U, void>::value, int >::type = 0>
+      template<typename U=T, typename std::enable_if< !std::is_same<U, void>::value
+                                                      && std::is_copy_constructible<T>::value, int >::type = 0>
       bool push_overwrite(const U& t);
 
       /** This version of push_overwrite() is valid only for T=void */
@@ -538,7 +540,8 @@ namespace cppext {
   }
 
   template<typename T, typename FEATURES>
-  template<typename U, typename std::enable_if< !std::is_same<U, void>::value, int >::type>
+  template<typename U, typename std::enable_if< !std::is_same<U, void>::value
+                                                && std::is_copy_constructible<T>::value, int >::type>
   bool future_queue<T,FEATURES>::push(const U& t) {
     return push(T(t));
   }
@@ -605,7 +608,8 @@ namespace cppext {
   }
 
   template<typename T, typename FEATURES>
-  template<typename U, typename std::enable_if< !std::is_same<U, void>::value, int >::type>
+  template<typename U, typename std::enable_if< !std::is_same<U, void>::value
+                                                && std::is_copy_constructible<T>::value, int >::type>
   bool future_queue<T,FEATURES>::push_overwrite(const U& t) {
     return push_overwrite(T(t));
   }

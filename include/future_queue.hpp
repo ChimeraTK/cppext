@@ -75,6 +75,9 @@ namespace cppext {
       /** update readIndexMax after a write operation was completed */
       void update_read_index_max();
 
+      /** Set the notification queue in the shared state, as done in when_any. */
+      void setNotificationQueue(future_queue<size_t, MOVE_DATA> &notificationQueue);
+
       /** pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue). */
       std::shared_ptr<detail::shared_state_base> d;
 
@@ -86,6 +89,8 @@ namespace cppext {
 
       template<typename ITERATOR_TYPE>
       friend future_queue<void,MOVE_DATA> when_all(ITERATOR_TYPE begin, ITERATOR_TYPE end);
+
+      friend struct detail::shared_state_base;
 
   };
 
@@ -268,6 +273,13 @@ namespace cppext {
       /** Thread handling async-type continuations */
       std::thread continuation_process_async;
 
+      /** Flag whether this future_queue is a when_all-type continuation (of many other) */
+      bool is_continuation_when_all{false};
+
+      /** If either is_continuation_deferred or is_continuation_async is true, this will point to the original
+       *  queue of which *this is the continuation. */
+      future_queue_base continuation_origin;
+
       /** Notification queue used to realise a wait_any logic. This queue is shared between all queues participating in
        *  the same when_any. */
       future_queue<size_t> notifyerQueue;
@@ -348,7 +360,7 @@ namespace cppext {
       // Distribute the pointer to the notification queue to all participating queues
       size_t index = 0;
       for(ITERATOR_TYPE it = begin; it != end; ++it) {
-        atomic_store(&(it->d->notifyerQueue), notifyerQueue);
+        it->setNotificationQueue(notifyerQueue);
         // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
         size_t nPreviousValues = it->d->notifyerQueue_previousData;
         it->d->when_any_index = index;
@@ -389,7 +401,7 @@ namespace cppext {
         notifyerQueue.push();
       } );
 
-      notifyerQueue.d->is_continuation_deferred = true;
+      notifyerQueue.d->is_continuation_when_all = true;
 
       return notifyerQueue;
   }
@@ -455,7 +467,7 @@ namespace cppext {
 
   inline bool future_queue_base::empty() {
     if(d->hasFrontOwnership) return false;
-    if(d->is_continuation_deferred) d->continuation_process_deferred();
+    if(d->is_continuation_deferred || d->is_continuation_when_all) d->continuation_process_deferred();
     if(d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset()) {
       d->hasFrontOwnership = true;
       return false;
@@ -465,13 +477,18 @@ namespace cppext {
 
   inline void future_queue_base::wait() {
     if(d->hasFrontOwnership) return;
-    if(d->is_continuation_deferred) d->continuation_process_deferred_wait();
+    if(d->is_continuation_deferred || d->is_continuation_when_all) d->continuation_process_deferred_wait();
     d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
     d->hasFrontOwnership = true;
   }
 
   inline size_t future_queue_base::size() const {
-    return d->nBuffers - 1;
+    if(!d->is_continuation_deferred) {
+      return d->nBuffers - 1;
+    }
+    else {
+      return d->continuation_origin.size();
+    }
   }
 
   inline future_queue_base::future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_)
@@ -502,6 +519,15 @@ namespace cppext {
       }
       d->readIndexMax.compare_exchange_weak(l_readIndexMax, newReadIndexMax);
     } while(d->readIndexMax < newReadIndexMax);
+  }
+
+  inline void future_queue_base::setNotificationQueue(future_queue<size_t, MOVE_DATA> &notificationQueue) {
+    if(!d->is_continuation_deferred) {
+      atomic_store(&(d->notifyerQueue), notificationQueue);
+    }
+    else {
+      d->continuation_origin.setNotificationQueue(notificationQueue);
+    }
   }
 
   /*********************************************************************************************************************/
@@ -617,7 +643,9 @@ namespace cppext {
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   bool future_queue<T,FEATURES>::pop(U& t) {
-    if(d->is_continuation_deferred && !d->hasFrontOwnership) d->continuation_process_deferred();
+    if( (d->is_continuation_deferred || d->is_continuation_when_all) && !d->hasFrontOwnership ) {
+      d->continuation_process_deferred();
+    }
     if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
       std::exception_ptr e;
       if(d->exceptions[d->readIndex%d->nBuffers]) {
@@ -644,7 +672,9 @@ namespace cppext {
 
   template<typename T, typename FEATURES>
   bool future_queue<T,FEATURES>::pop() {
-    if(d->is_continuation_deferred && !d->hasFrontOwnership) d->continuation_process_deferred();
+    if( (d->is_continuation_deferred  || d->is_continuation_when_all) && !d->hasFrontOwnership ) {
+      d->continuation_process_deferred();
+    }
     if( d->hasFrontOwnership || d->semaphores[d->readIndex%d->nBuffers].is_ready_and_reset() ) {
       std::exception_ptr e;
       if(d->exceptions[d->readIndex%d->nBuffers]) {
@@ -666,7 +696,7 @@ namespace cppext {
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   void future_queue<T,FEATURES>::pop_wait(U& t) {
     if(!d->hasFrontOwnership) {
-      if(d->is_continuation_deferred) d->continuation_process_deferred_wait();
+      if(d->is_continuation_deferred || d->is_continuation_when_all) d->continuation_process_deferred_wait();
       d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
     }
     else {
@@ -692,7 +722,7 @@ namespace cppext {
   template<typename T, typename FEATURES>
   void future_queue<T,FEATURES>::pop_wait() {
     if(!d->hasFrontOwnership) {
-      if(d->is_continuation_deferred) d->continuation_process_deferred_wait();
+      if(d->is_continuation_deferred || d->is_continuation_when_all) d->continuation_process_deferred_wait();
       d->semaphores[d->readIndex%d->nBuffers].wait_and_reset();
     }
     else {
@@ -929,12 +959,14 @@ namespace cppext {
         future_queue<T2,FEATURES2> q_output(1);
         q_output.d->continuation_process_deferred = detail::make_continuation_process_deferred(q_input, q_output, callable);
         q_output.d->continuation_process_deferred_wait = detail::make_continuation_process_deferred_wait(q_input, q_output, callable);
+        q_output.d->continuation_origin = *this;
         q_output.d->is_continuation_deferred = true;
         return q_output;
       }
       else {
         future_queue<T2,FEATURES2> q_output(size());
         q_output.d->continuation_process_async = std::thread(detail::make_continuation_process_async(q_input, q_output, callable));
+        q_output.d->continuation_origin = *this;
         q_output.d->is_continuation_async = true;
         return q_output;
       }

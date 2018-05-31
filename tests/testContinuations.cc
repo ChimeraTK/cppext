@@ -144,7 +144,7 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 
 /*********************************************************************************************************************/
 
-BOOST_AUTO_TEST_CASE(testLazyContinuation_void) {
+BOOST_AUTO_TEST_CASE(testDeferredContinuation_void) {
 
     cppext::future_queue<void> q(5);
     std::atomic<size_t> continuationCounter;

@@ -76,7 +76,7 @@ namespace cppext {
       void update_read_index_max();
 
       /** Set the notification queue in the shared state, as done in when_any. */
-      void setNotificationQueue(future_queue<size_t, MOVE_DATA> &notificationQueue);
+      void setNotificationQueue(future_queue<size_t, MOVE_DATA> &notificationQueue, size_t indexToSend);
 
       /** pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue). */
       std::shared_ptr<detail::shared_state_base> d;
@@ -360,10 +360,9 @@ namespace cppext {
       // Distribute the pointer to the notification queue to all participating queues
       size_t index = 0;
       for(ITERATOR_TYPE it = begin; it != end; ++it) {
-        it->setNotificationQueue(notifyerQueue);
+        it->setNotificationQueue(notifyerQueue, index);
         // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
         size_t nPreviousValues = it->d->notifyerQueue_previousData;
-        it->d->when_any_index = index;
         for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue.push(index);
         ++index;
       }
@@ -521,12 +520,14 @@ namespace cppext {
     } while(d->readIndexMax < newReadIndexMax);
   }
 
-  inline void future_queue_base::setNotificationQueue(future_queue<size_t, MOVE_DATA> &notificationQueue) {
+  inline void future_queue_base::setNotificationQueue( future_queue<size_t, MOVE_DATA> &notificationQueue,
+                                                       size_t indexToSend ) {
     if(!d->is_continuation_deferred) {
+      d->when_any_index = indexToSend;
       atomic_store(&(d->notifyerQueue), notificationQueue);
     }
     else {
-      d->continuation_origin.setNotificationQueue(notificationQueue);
+      d->continuation_origin.setNotificationQueue(notificationQueue, indexToSend);
     }
   }
 

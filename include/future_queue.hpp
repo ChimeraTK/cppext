@@ -602,13 +602,13 @@ namespace cppext {
     if(write_available() == 0) {
       if(d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready_and_reset()) {
         ret = false;
+        d->writeIndex--;
       }
       else {
         // if the semaphore for the last written buffer is no longer ready it means the buffer has been read already. In
         // this case we should now have buffers available for writing.
         assert(write_available() > 0);
       }
-      d->writeIndex--;
     }
     detail::data_assign(
       static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->writeIndex%d->nBuffers],

@@ -150,7 +150,8 @@ namespace cppext {
        *
        *  When using this function, the queue must have a length of at least 2.
        *
-       *  Note: when used in a multi-producer context the behaviour is undefined! */
+       *  Note: when used in a multi-producer context and false is returned, it is not defined whether other data or
+       *  data written in this call to push_overwrite() has been discarded. */
       template<typename U=T, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type = 0>
       bool push_overwrite(U&& t);
 
@@ -599,25 +600,24 @@ namespace cppext {
   bool future_queue<T,FEATURES>::push_overwrite(U&& t) {
     assert(d->nBuffers-1 > 1);
     bool ret = true;
-    if(write_available() == 0) {
+    size_t myIndex;
+    if(!obtain_write_slot(myIndex)) {
       if(d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready_and_reset()) {
         ret = false;
         d->writeIndex--;
       }
       else {
-        // if the semaphore for the last written buffer is no longer ready it means the buffer has been read already. In
-        // this case we should now have buffers available for writing.
-        assert(write_available() > 0);
+        return false;
       }
+      if(!obtain_write_slot(myIndex)) return false;
     }
     detail::data_assign(
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->writeIndex%d->nBuffers],
+      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers],
       std::move(t), FEATURES()
     );
-    d->writeIndex++;
-    assert(!d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready());
-    d->semaphores[(d->writeIndex-1)%d->nBuffers].unlock();
-    d->readIndexMax = size_t(d->writeIndex);
+    assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
+    d->semaphores[myIndex % d->nBuffers].unlock();
+    update_read_index_max();
 
     // send notification if requested and if data wasn't overwritten
     if(ret) {

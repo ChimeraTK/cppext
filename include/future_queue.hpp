@@ -602,9 +602,14 @@ namespace cppext {
     bool ret = true;
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) {
-      if(d->semaphores[(d->writeIndex-1)%d->nBuffers].is_ready_and_reset()) {
+      if(d->semaphores[(myIndex-1)%d->nBuffers].is_ready_and_reset()) {
+        size_t expectedIndex = myIndex;
+        bool success = d->writeIndex.compare_exchange_strong(expectedIndex, myIndex-1);
+        if(!success) {
+          d->semaphores[(myIndex-1)%d->nBuffers].unlock();
+          return false;
+        }
         ret = false;
-        d->writeIndex--;
       }
       else {
         return false;

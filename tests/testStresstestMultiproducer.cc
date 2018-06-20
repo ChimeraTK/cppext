@@ -13,7 +13,6 @@ BOOST_AUTO_TEST_SUITE(testStresstestultiproducer)
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(stresstestMultiproducer) {
-
     constexpr size_t runForSeconds = 10;
     constexpr size_t nSenders = 200;
     constexpr size_t lengthOfQueue = 10;
@@ -112,9 +111,9 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducerOverwrite) {
         int nextValue = senderFirstValue;
         while(!shutdownSenders) {
           bool success = q.push_overwrite(nextValue);
+          ++nextValue;
+          if(nextValue >= senderFirstValue+idsPerSender) nextValue = senderFirstValue;
           if(success) {
-            ++nextValue;
-            if(nextValue >= senderFirstValue+idsPerSender) nextValue = senderFirstValue;
             consequtive_fails = 0;
           }
           else {
@@ -128,18 +127,12 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducerOverwrite) {
 
     // launch receiver thread
     boost::thread receiverThread( [q, &shutdownReceiver] () mutable {
-      std::vector<int> nextValues(nSenders);
-      for(size_t i=0; i<nSenders; ++i) nextValues[i] = i*idsPerSender;
-
       // 'endless' loop to receive data
       while(!shutdownReceiver) {
         int value;
         q.pop_wait(value);
         size_t senderId = value / idsPerSender;
-        BOOST_CHECK_TS(senderId < nSenders);
-        BOOST_CHECK_TS(value == nextValues[senderId] || value == nextValues[senderId]+1);
-        nextValues[senderId]++;
-        if(nextValues[senderId] >= ((signed)senderId+1)*idsPerSender) nextValues[senderId] = senderId*idsPerSender;
+        assert(senderId < nSenders);
       }
     } ); // end receiver thread
 

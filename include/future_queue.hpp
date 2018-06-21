@@ -51,6 +51,10 @@ namespace cppext {
        *  pop()/pop_wait()/front() when the receiver reads the corresponding queue element. */
       bool push_exception(std::exception_ptr exception);
 
+      /** Like push_exception() but overwrite the last pushed value in case the queue is full. See also
+       *  push_overwrite() for more information. */
+      bool push_overwrite_exception(std::exception_ptr exception);
+
       /** Check if there is currently no data on the queue. If the queue contains data (i.e. true will be returned),
        *  the function will guarantee that this data can be accessed later e.g. thorugh front() or pop(). This
        *  guarantee holds even if the sender uses pop_overwrite(). */
@@ -465,6 +469,45 @@ namespace cppext {
     return true;
   }
 
+  inline bool future_queue_base::push_overwrite_exception(std::exception_ptr exception) {
+    assert(d->nBuffers-1 > 1);
+    bool ret = true;
+    size_t myIndex;
+    if(!obtain_write_slot(myIndex)) {
+      if(d->semaphores[(myIndex-1)%d->nBuffers].is_ready_and_reset()) {
+        size_t expectedIndex = myIndex;
+        bool success = d->writeIndex.compare_exchange_strong(expectedIndex, myIndex-1);
+        if(!success) {
+          d->semaphores[(myIndex-1)%d->nBuffers].unlock();
+          return false;
+        }
+        ret = false;
+      }
+      else {
+        return false;
+      }
+      if(!obtain_write_slot(myIndex)) return false;
+    }
+    d->exceptions[myIndex % d->nBuffers] = exception;
+    assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
+    d->semaphores[myIndex % d->nBuffers].unlock();
+    update_read_index_max();
+
+    // send notification if requested and if data wasn't overwritten
+    if(ret) {
+      auto notify = atomic_load(&d->notifyerQueue);
+      if(notify.d) {
+        bool nret = notify.push(d->when_any_index);
+        (void)nret;
+        assert(nret == true);
+      }
+      else {
+        d->notifyerQueue_previousData++;
+      }
+    }
+    return ret;
+  }
+
   inline bool future_queue_base::empty() {
     if(d->hasFrontOwnership) return false;
     if(d->is_continuation_deferred || d->is_continuation_when_all) d->continuation_process_deferred();
@@ -551,6 +594,7 @@ namespace cppext {
       static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers],
       std::move(t), FEATURES()
     );
+    d->exceptions[myIndex % d->nBuffers] = nullptr;
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
@@ -579,6 +623,7 @@ namespace cppext {
     static_assert( std::is_same<T, void>::value, "future_queue<T,FEATURES>::push(void) may only be called for T = void." );
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
+    d->exceptions[myIndex % d->nBuffers] = nullptr;
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
@@ -620,6 +665,7 @@ namespace cppext {
       static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers],
       std::move(t), FEATURES()
     );
+    d->exceptions[myIndex % d->nBuffers] = nullptr;
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();

@@ -82,6 +82,9 @@ namespace cppext {
       /** Set the notification queue in the shared state, as done in when_any. */
       void setNotificationQueue(future_queue<size_t, MOVE_DATA> &notificationQueue, size_t indexToSend);
 
+      /** Obtain the counter for the number of elements in the queue before setNotificationQueue() was called */
+      size_t getNotificationQueuePreviousData();
+
       /** pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue). */
       std::shared_ptr<detail::shared_state_base> d;
 
@@ -367,7 +370,7 @@ namespace cppext {
       for(ITERATOR_TYPE it = begin; it != end; ++it) {
         it->setNotificationQueue(notifyerQueue, index);
         // at this point, queue.notifyerQueue_previousData will no longer be modified by the sender side
-        size_t nPreviousValues = it->d->notifyerQueue_previousData;
+        size_t nPreviousValues = it->getNotificationQueuePreviousData();
         for(size_t i=0; i<nPreviousValues; ++i) notifyerQueue.push(index);
         ++index;
       }
@@ -572,6 +575,15 @@ namespace cppext {
     }
     else {
       d->continuation_origin.setNotificationQueue(notificationQueue, indexToSend);
+    }
+  }
+
+  inline size_t future_queue_base::getNotificationQueuePreviousData() {
+    if(!d->is_continuation_deferred) {
+      return d->notifyerQueue_previousData;
+    }
+    else {
+      return d->continuation_origin.getNotificationQueuePreviousData();
     }
   }
 

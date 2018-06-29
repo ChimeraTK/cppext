@@ -10,13 +10,19 @@
 
 namespace cppext {
 
-/*********************************************************************************************************************/
+  /*********************************************************************************************************************/
 
   /** Feature tag for future_queue: use std::move to store and retreive data to/from the queue */
   class MOVE_DATA {};
 
   /** Feature tag for future_queue: use std::swap to store and retreive data to/from the queue */
   class SWAP_DATA {};
+
+  namespace detail {
+    /** Exception to be pushed into the queue to signal a termination request for the internal thread of an async
+     *  continuation. This is done automatically during destruction of the corresponding queue. */
+    class TerminateInternalThread {};
+  }
 
   /*********************************************************************************************************************/
 
@@ -25,6 +31,61 @@ namespace cppext {
 
     template<typename T>
     struct shared_state;
+
+    template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
+    struct continuation_process_async;
+
+    /** shared_ptr-like smart pointer type for referencing the shared_state. This is required (instead or in addition
+     *  to using a shared_ptr), since in case of a async continuation the internal thread always holds a reference to
+     *  the shared_state but should be destroyed when the last reference (outside the internal thread) gets
+     *  destroyed. */
+    struct shared_state_ptr {
+        /// Default constructor: create empty pointer
+        shared_state_ptr();
+
+        /// Copy constructor
+        shared_state_ptr(const shared_state_ptr &other);
+
+        /// Copy by assignment
+        shared_state_ptr& operator=(const shared_state_ptr &other);
+
+        /// Destructor
+        ~shared_state_ptr();
+
+        /// Atomically copy the pointer from another shared_state_ptr
+        void atomic_store(shared_state_ptr &other);
+
+        /// Atomically load the pointer
+        shared_state_ptr atomic_load() const;
+
+        /// Create new shared_state for type T
+        template<typename T>
+        void make_new(size_t length);
+
+        /// Dereferencing operator
+        shared_state_base* operator->();
+        const shared_state_base* operator->() const;
+
+        /// Cast into shared state for type T
+        template<typename T>
+        shared_state<T>* cast();
+
+        /// Check if pointer is initialised
+        operator bool() const;
+
+      private:
+        void free();
+
+        std::atomic<shared_state_base*> ptr;
+    };
+
+    template<typename T>
+    shared_state_ptr make_shared_state(size_t length) {
+      shared_state_ptr p;
+      p.make_new<T>(length);
+      return p;
+    }
+
   }
 
   template<typename T, typename FEATURES>
@@ -69,7 +130,7 @@ namespace cppext {
 
     protected:
 
-      future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_);
+      future_queue_base(const detail::shared_state_ptr &d_ptr_);
 
       future_queue_base();
 
@@ -86,7 +147,7 @@ namespace cppext {
       size_t getNotificationQueuePreviousData();
 
       /** pointer to data used to allow sharing the queue (create multiple copies which all refer to the same queue). */
-      std::shared_ptr<detail::shared_state_base> d;
+      detail::shared_state_ptr d;
 
       template<typename T, typename FEATURES>
       friend class ::cppext::future_queue;
@@ -98,6 +159,10 @@ namespace cppext {
       friend future_queue<void,MOVE_DATA> when_all(ITERATOR_TYPE begin, ITERATOR_TYPE end);
 
       friend struct detail::shared_state_base;
+      friend struct detail::shared_state_ptr;
+
+      template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
+      friend struct detail::continuation_process_async;
 
   };
 
@@ -206,13 +271,15 @@ namespace cppext {
       future_queue<T2,FEATURES2> then(CALLABLE callable, std::launch policy = std::launch::async);
 
       friend future_queue<T,FEATURES> atomic_load(const future_queue<T,FEATURES>* p) {
+        //future_queue<T,FEATURES> q(p->d.atomic_load());
         future_queue<T,FEATURES> q;
-        q.d = std::atomic_load(&(p->d));
+        auto ptr = p->d.atomic_load();
+        q.d.atomic_store(ptr);
         return q;
       }
 
       friend void atomic_store(future_queue<T,FEATURES>* p, future_queue<T,FEATURES> r) {
-        atomic_store(&(p->d), r.d);
+        p->d.atomic_store(r.d);
       }
 
       typedef T value_type;
@@ -237,6 +304,9 @@ namespace cppext {
         hasFrontOwnership(false),
         notifyerQueue_previousData(0)
       {}
+
+      /** reference count. See shared_state_ptr for further documentation. */
+      std::atomic<size_t> reference_count{0};
 
       /** index used in wait_any to identify the queue */
       size_t when_any_index;
@@ -280,6 +350,9 @@ namespace cppext {
 
       /** Thread handling async-type continuations */
       std::thread continuation_process_async;
+
+      /** Flag whether the internal thread continuation_process_async has been terminated */
+      std::atomic<bool> continuation_process_async_terminated{false};
 
       /** Flag whether this future_queue is a when_all-type continuation (of many other) */
       bool is_continuation_when_all{false};
@@ -435,6 +508,102 @@ namespace cppext {
 
   } // namespace detail
 
+
+  /*********************************************************************************************************************/
+
+  namespace detail {
+
+    shared_state_ptr::shared_state_ptr()
+    : ptr(nullptr)
+    {}
+
+    shared_state_ptr::shared_state_ptr(const shared_state_ptr &other) {
+      ptr = other.ptr.load(std::memory_order_relaxed);
+      ptr.load(std::memory_order_relaxed)->reference_count++;
+    }
+
+    shared_state_ptr& shared_state_ptr::operator=(const shared_state_ptr &other) {
+      free();
+      ptr = other.ptr.load(std::memory_order_relaxed);
+      ptr.load(std::memory_order_relaxed)->reference_count++;
+      return *this;
+    }
+
+    shared_state_ptr::~shared_state_ptr() {
+      free();
+    }
+
+    void shared_state_ptr::free() {
+      if(ptr.load(std::memory_order_relaxed) == nullptr) return;
+      size_t oldCount = ptr.load(std::memory_order_relaxed)->reference_count--;
+      if(!ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 1) {
+        delete ptr.load(std::memory_order_relaxed);
+        return;
+      }
+      if(ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 2) {
+        if(ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_process_async.joinable()) {
+          // signal termination to internal thread and wait until thread has been terminated
+          while(ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_process_async_terminated == false) {
+            try {
+              throw detail::TerminateInternalThread();
+            }
+            catch(...) {
+              ptr.load(std::memory_order_relaxed)->continuation_origin.push_exception(std::current_exception());
+            }
+          }
+          ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_process_async.join();
+        }
+        // delete the shared_state
+        delete ptr.load(std::memory_order_relaxed);
+      }
+    }
+
+    void shared_state_ptr::atomic_store(shared_state_ptr &other) {
+      free();
+      if(other.ptr.load(std::memory_order_relaxed) != nullptr) {
+        other.ptr.load(std::memory_order_relaxed)->reference_count++;
+      }
+      ptr.store(other.ptr);
+    }
+
+    shared_state_ptr shared_state_ptr::atomic_load() const {
+      shared_state_ptr p;
+      p.ptr = ptr.load();
+      if(p.ptr.load(std::memory_order_relaxed) != nullptr) {
+        p.ptr.load(std::memory_order_relaxed)->reference_count++;
+      }
+      return p;
+    }
+
+    template<typename T>
+    void shared_state_ptr::make_new(size_t length) {
+      free();
+      ptr = new shared_state<T>(length);
+      ptr.load(std::memory_order_relaxed)->reference_count++;
+    }
+
+    shared_state_base* shared_state_ptr::operator->() {
+      assert(ptr.load(std::memory_order_relaxed) != nullptr);
+      return ptr.load(std::memory_order_relaxed);
+    }
+
+    const shared_state_base* shared_state_ptr::operator->() const {
+      assert(ptr.load(std::memory_order_relaxed) != nullptr);
+      return ptr.load(std::memory_order_relaxed);
+    }
+
+    template<typename T>
+    shared_state<T>* shared_state_ptr::cast() {
+      assert(ptr.load(std::memory_order_relaxed) != nullptr);
+      return static_cast<shared_state<T>*>(ptr.load(std::memory_order_relaxed));
+    }
+
+    shared_state_ptr::operator bool() const {
+      return ptr.load(std::memory_order_relaxed) != nullptr;
+    }
+
+  } // namespace detail
+
   /*********************************************************************************************************************/
 
   inline size_t future_queue_base::write_available() const {
@@ -537,10 +706,10 @@ namespace cppext {
     }
   }
 
-  inline future_queue_base::future_queue_base(const std::shared_ptr<detail::shared_state_base> &d_ptr_)
+  inline future_queue_base::future_queue_base(const detail::shared_state_ptr &d_ptr_)
   : d(d_ptr_) {}
 
-  inline future_queue_base::future_queue_base() : d(nullptr) {}
+  inline future_queue_base::future_queue_base() : d() {}
 
   inline bool future_queue_base::obtain_write_slot(size_t &index) {
     index = d->writeIndex;
@@ -591,7 +760,7 @@ namespace cppext {
 
   template<typename T, typename FEATURES>
   future_queue<T,FEATURES>::future_queue(size_t length)
-  : future_queue_base(std::make_shared<detail::shared_state<T>>(length))
+  : future_queue_base(detail::make_shared_state<T>(length))
   {}
 
   template<typename T, typename FEATURES>
@@ -603,7 +772,7 @@ namespace cppext {
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
     detail::data_assign(
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers],
+      future_queue_base::d.cast<T>()->buffers[myIndex % d->nBuffers],
       std::move(t), FEATURES()
     );
     d->exceptions[myIndex % d->nBuffers] = nullptr;
@@ -674,7 +843,7 @@ namespace cppext {
       if(!obtain_write_slot(myIndex)) return false;
     }
     detail::data_assign(
-      static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[myIndex % d->nBuffers],
+      future_queue_base::d.cast<T>()->buffers[myIndex % d->nBuffers],
       std::move(t), FEATURES()
     );
     d->exceptions[myIndex % d->nBuffers] = nullptr;
@@ -718,7 +887,7 @@ namespace cppext {
       else {
         detail::data_assign(
           t,
-          std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
+          std::move(future_queue_base::d.cast<T>()->buffers[d->readIndex%d->nBuffers]),
           FEATURES()
         );
       }
@@ -773,7 +942,7 @@ namespace cppext {
     else {
       detail::data_assign(
         t,
-        std::move(static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers]),
+        std::move(future_queue_base::d.cast<U>()->buffers[d->readIndex%d->nBuffers]),
         FEATURES()
       );
     }
@@ -807,7 +976,7 @@ namespace cppext {
   const U& future_queue<T,FEATURES>::front() const {
     assert(d->hasFrontOwnership);
     if(d->exceptions[d->readIndex%d->nBuffers]) std::rethrow_exception(d->exceptions[d->readIndex%d->nBuffers]);
-    return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
+    future_queue_base::d.cast<T>()->buffers[d->readIndex%d->nBuffers];
   }
 
   template<typename T, typename FEATURES>
@@ -815,7 +984,7 @@ namespace cppext {
   U& future_queue<T,FEATURES>::front() {
     assert(d->hasFrontOwnership);
     if(d->exceptions[d->readIndex%d->nBuffers]) std::rethrow_exception(d->exceptions[d->readIndex%d->nBuffers]);
-    return static_cast<detail::shared_state<T>*>(future_queue_base::d.get())->buffers[d->readIndex%d->nBuffers];
+    return future_queue_base::d.cast<T>()->buffers[d->readIndex%d->nBuffers];
   }
 
   namespace detail {
@@ -947,10 +1116,18 @@ namespace cppext {
       continuation_process_async(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        while(true) {         // FIXME how to shutdown properly
+        while(true) {
           // written this way so the callable is able to swap with the internal buffer
           q_input.wait();
-          q_output.push(callable(q_input.front()));
+          T *v;
+          try {
+            v = &(q_input.front());
+          }
+          catch(detail::TerminateInternalThread&) {
+            q_input.d->continuation_process_async_terminated = true;
+            return;
+          }
+          q_output.push(callable(*v));
           q_input.pop();
           // TODO how to handle full output queues?
         }
@@ -964,8 +1141,14 @@ namespace cppext {
       continuation_process_async(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        while(true) {        // FIXME how to shutdown properly
-          q_input.pop_wait();
+        while(true) {
+          try {
+            q_input.pop_wait();
+          }
+          catch(detail::TerminateInternalThread&) {
+            q_input.d->continuation_process_async_terminated = true;
+            return;
+          }
           q_output.push(callable());
           // TODO how to handle full output queues?
         }
@@ -979,10 +1162,18 @@ namespace cppext {
       continuation_process_async(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        while(true) {         // FIXME how to shutdown properly
+        while(true) {
           // written this way so the callable is able to swap with the internal buffer
           q_input.wait();
-          callable(q_input.front());
+          T *v;
+          try {
+            v = &(q_input.front());
+          }
+          catch(detail::TerminateInternalThread&) {
+            q_input.d->continuation_process_async_terminated = true;
+            return;
+          }
+          callable(v);
           q_output.push();
           q_input.pop();
           // TODO how to handle full output queues?
@@ -997,8 +1188,14 @@ namespace cppext {
       continuation_process_async(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        while(true) {        // FIXME how to shutdown properly
-          q_input.pop_wait();
+        while(true) {
+          try {
+            q_input.pop_wait();
+          }
+          catch(detail::TerminateInternalThread&) {
+            q_input.d->continuation_process_async_terminated = true;
+            return;
+          }
           callable();
           q_output.push();
           // TODO how to handle full output queues?
@@ -1020,7 +1217,7 @@ namespace cppext {
   future_queue<T2,FEATURES2> future_queue<T,FEATURES>::then(CALLABLE callable, std::launch policy) {
       future_queue<T,FEATURES> q_input(*this);
       if(policy == std::launch::deferred) {
-        future_queue<T2,FEATURES2> q_output(1);
+        future_queue<T2,FEATURES2> q_output(2);   // must be 2 so we can use push_overwrite_exception for shutdown
         q_output.d->continuation_process_deferred = detail::make_continuation_process_deferred(q_input, q_output, callable);
         q_output.d->continuation_process_deferred_wait = detail::make_continuation_process_deferred_wait(q_input, q_output, callable);
         q_output.d->continuation_origin = *this;

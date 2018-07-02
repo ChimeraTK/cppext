@@ -466,6 +466,9 @@ namespace cppext {
       std::vector<future_queue_base> participants;
       for(auto it=begin; it!=end; ++it) participants.push_back(*it);
 
+      // obtain notification queue for any update to any queue
+      auto anyNotify = when_any(begin,end);
+
       notifyerQueue.d->continuation_process_deferred = std::function<void(void)>( [notifyerQueue, participants] () mutable {
         bool empty = false;
         for(auto &q: participants) {
@@ -476,12 +479,22 @@ namespace cppext {
         if(!empty) notifyerQueue.push();
       } );
 
-      notifyerQueue.d->continuation_process_deferred_wait = std::function<void(void)>( [notifyerQueue, participants] () mutable {
-        for(auto &q: participants) q.wait();
+      notifyerQueue.d->continuation_process_deferred_wait = std::function<void(void)>( [notifyerQueue, participants, anyNotify] () mutable {
+        while(true) {
+          anyNotify.pop_wait();
+          bool empty = false;
+          for(auto &q: participants) {
+            if(q.empty()) {
+              empty = true; break;
+            }
+          }
+          if(!empty) break;
+        }
         notifyerQueue.push();
       } );
 
       notifyerQueue.d->is_continuation_when_all = true;
+      notifyerQueue.d->continuation_origin = anyNotify;
 
       return notifyerQueue;
   }
@@ -548,7 +561,13 @@ namespace cppext {
               throw detail::TerminateInternalThread();
             }
             catch(...) {
-              ptr.load(std::memory_order_relaxed)->continuation_origin.push_exception(std::current_exception());
+              if( ptr.load(std::memory_order_relaxed)->continuation_origin.d->is_continuation_deferred ||
+                  ptr.load(std::memory_order_relaxed)->continuation_origin.d->is_continuation_when_all    ) {
+                ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
+              }
+              else {
+                ptr.load(std::memory_order_relaxed)->continuation_origin.push_exception(std::current_exception());
+              }
             }
           }
           ptr.load(std::memory_order_relaxed)->continuation_process_async.join();

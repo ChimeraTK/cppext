@@ -526,27 +526,27 @@ namespace cppext {
 
   namespace detail {
 
-    shared_state_ptr::shared_state_ptr()
+    inline shared_state_ptr::shared_state_ptr()
     : ptr(nullptr)
     {}
 
-    shared_state_ptr::shared_state_ptr(const shared_state_ptr &other) {
+    inline shared_state_ptr::shared_state_ptr(const shared_state_ptr &other) {
       ptr = other.ptr.load(std::memory_order_relaxed);
       ptr.load(std::memory_order_relaxed)->reference_count++;
     }
 
-    shared_state_ptr& shared_state_ptr::operator=(const shared_state_ptr &other) {
+    inline shared_state_ptr& shared_state_ptr::operator=(const shared_state_ptr &other) {
       free();
       ptr = other.ptr.load(std::memory_order_relaxed);
       ptr.load(std::memory_order_relaxed)->reference_count++;
       return *this;
     }
 
-    shared_state_ptr::~shared_state_ptr() {
+    inline shared_state_ptr::~shared_state_ptr() {
       free();
     }
 
-    void shared_state_ptr::free() {
+    inline void shared_state_ptr::free() {
       if(ptr.load(std::memory_order_relaxed) == nullptr) return;
       size_t oldCount = ptr.load(std::memory_order_relaxed)->reference_count--;
       if(!ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 1) {
@@ -577,7 +577,7 @@ namespace cppext {
       }
     }
 
-    void shared_state_ptr::atomic_store(shared_state_ptr &other) {
+    inline void shared_state_ptr::atomic_store(shared_state_ptr &other) {
       free();
       if(other.ptr.load(std::memory_order_relaxed) != nullptr) {
         other.ptr.load(std::memory_order_relaxed)->reference_count++;
@@ -585,7 +585,7 @@ namespace cppext {
       ptr.store(other.ptr);
     }
 
-    shared_state_ptr shared_state_ptr::atomic_load() const {
+    inline shared_state_ptr shared_state_ptr::atomic_load() const {
       shared_state_ptr p;
       p.ptr = ptr.load();
       if(p.ptr.load(std::memory_order_relaxed) != nullptr) {
@@ -601,12 +601,12 @@ namespace cppext {
       ptr.load(std::memory_order_relaxed)->reference_count++;
     }
 
-    shared_state_base* shared_state_ptr::operator->() {
+    inline shared_state_base* shared_state_ptr::operator->() {
       assert(ptr.load(std::memory_order_relaxed) != nullptr);
       return ptr.load(std::memory_order_relaxed);
     }
 
-    const shared_state_base* shared_state_ptr::operator->() const {
+    inline const shared_state_base* shared_state_ptr::operator->() const {
       assert(ptr.load(std::memory_order_relaxed) != nullptr);
       return ptr.load(std::memory_order_relaxed);
     }
@@ -617,7 +617,7 @@ namespace cppext {
       return static_cast<shared_state<T>*>(ptr.load(std::memory_order_relaxed));
     }
 
-    shared_state_ptr::operator bool() const {
+    inline shared_state_ptr::operator bool() const {
       return ptr.load(std::memory_order_relaxed) != nullptr;
     }
 
@@ -1192,7 +1192,7 @@ namespace cppext {
             q_output.d->continuation_process_async_terminated = true;
             return;
           }
-          callable(v);
+          callable(*v);
           q_output.push();
           q_input.pop();
           // TODO how to handle full output queues?

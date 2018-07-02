@@ -541,9 +541,9 @@ namespace cppext {
         return;
       }
       if(ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 2) {
-        if(ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_process_async.joinable()) {
+        if(ptr.load(std::memory_order_relaxed)->continuation_process_async.joinable()) {
           // signal termination to internal thread and wait until thread has been terminated
-          while(ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_process_async_terminated == false) {
+          while(ptr.load(std::memory_order_relaxed)->continuation_process_async_terminated == false) {
             try {
               throw detail::TerminateInternalThread();
             }
@@ -551,7 +551,7 @@ namespace cppext {
               ptr.load(std::memory_order_relaxed)->continuation_origin.push_exception(std::current_exception());
             }
           }
-          ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_process_async.join();
+          ptr.load(std::memory_order_relaxed)->continuation_process_async.join();
         }
         // delete the shared_state
         delete ptr.load(std::memory_order_relaxed);
@@ -1124,7 +1124,7 @@ namespace cppext {
             v = &(q_input.front());
           }
           catch(detail::TerminateInternalThread&) {
-            q_input.d->continuation_process_async_terminated = true;
+            q_output.d->continuation_process_async_terminated = true;
             return;
           }
           q_output.push(callable(*v));
@@ -1146,7 +1146,7 @@ namespace cppext {
             q_input.pop_wait();
           }
           catch(detail::TerminateInternalThread&) {
-            q_input.d->continuation_process_async_terminated = true;
+            q_output.d->continuation_process_async_terminated = true;
             return;
           }
           q_output.push(callable());
@@ -1170,7 +1170,7 @@ namespace cppext {
             v = &(q_input.front());
           }
           catch(detail::TerminateInternalThread&) {
-            q_input.d->continuation_process_async_terminated = true;
+            q_output.d->continuation_process_async_terminated = true;
             return;
           }
           callable(v);
@@ -1193,7 +1193,7 @@ namespace cppext {
             q_input.pop_wait();
           }
           catch(detail::TerminateInternalThread&) {
-            q_input.d->continuation_process_async_terminated = true;
+            q_output.d->continuation_process_async_terminated = true;
             return;
           }
           callable();

@@ -537,32 +537,50 @@ namespace cppext {
     }
 
     inline void shared_state_ptr::free() {
+
+      // Don't do anything if called on a nullptr (i.e. default constructed or already destroyed)
       if(ptr.load(std::memory_order_relaxed) == nullptr) return;
+
+      // Reduce reference count but atomically keep the old reference counter. Note that the std::memory_order_relaxed
+      // refers to the access to the pointer not to the reference counter.
       size_t oldCount = ptr.load(std::memory_order_relaxed)->reference_count--;
 
+      // Determine whether we need to destroy the shared state depending on possible internal references.
       bool executeDelete = false;
 
-      if(ptr.load(std::memory_order_relaxed)->is_continuation_deferred && oldCount == 3) {
+      // Standard case: no continuation. If the last user is just destroying its reference we delete the shared state.
+      if(oldCount == 1 && !ptr.load(std::memory_order_relaxed)->is_continuation_async &&
+                          !ptr.load(std::memory_order_relaxed)->is_continuation_deferred &&
+                          !ptr.load(std::memory_order_relaxed)->is_continuation_when_all    ) {
+        executeDelete = true;
+      }
+      // Deferred continuations (incl. when_all) have two internal use counts due to the two std::functions, so we need
+      // to remove those functions first.
+      else if(oldCount == 3 && ( ptr.load(std::memory_order_relaxed)->is_continuation_deferred ||
+                            ptr.load(std::memory_order_relaxed)->is_continuation_when_all    ) ) {
         ptr.load(std::memory_order_relaxed)->continuation_process_deferred = {};
         ptr.load(std::memory_order_relaxed)->continuation_process_deferred_wait = {};
         executeDelete = true;
       }
-      else if(!ptr.load(std::memory_order_relaxed)->is_continuation_async &&
-              !ptr.load(std::memory_order_relaxed)->is_continuation_deferred && oldCount == 1) {
-        executeDelete = true;
-      }
-      else if(ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 2) {
+      // Async continuations have one internal use count inside their thread, so we need to terminate the thread first.
+      else if(oldCount == 2 && ptr.load(std::memory_order_relaxed)->is_continuation_async) {
         if(ptr.load(std::memory_order_relaxed)->continuation_process_async.joinable()) {
-          // signal termination to internal thread and wait until thread has been terminated
+          // Signal termination to internal thread and wait until thread has been terminated
           while(ptr.load(std::memory_order_relaxed)->continuation_process_async_terminated == false) {
+            // Push a detail::TerminateInternalThread exception into the queue which the internal thread is potentially
+            // waiting on.
             try {
               throw detail::TerminateInternalThread();
             }
             catch(...) {
+              // Special case: the origin queue is a continuation itself (deferred or when_all) - we need to push the
+              // exception to the origin of the origin to actually reach the internal thread, since deferred/when_all
+              // continuations do not really use their own queue
               if( ptr.load(std::memory_order_relaxed)->continuation_origin.d->is_continuation_deferred ||
                   ptr.load(std::memory_order_relaxed)->continuation_origin.d->is_continuation_when_all    ) {
                 ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
               }
+              // Standard case: just push the exception to the origin queue of the continuation
               else {
                 ptr.load(std::memory_order_relaxed)->continuation_origin.push_exception(std::current_exception());
               }
@@ -575,6 +593,7 @@ namespace cppext {
 
       // delete the shared_state?
       if(executeDelete) {
+        // Now that all potential internal references have been cleared the reference count must be 0
         assert(ptr.load(std::memory_order_relaxed)->reference_count == 0);
         delete ptr.load(std::memory_order_relaxed);
         ptr.store(nullptr, std::memory_order_relaxed);

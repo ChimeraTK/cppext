@@ -539,11 +539,19 @@ namespace cppext {
     inline void shared_state_ptr::free() {
       if(ptr.load(std::memory_order_relaxed) == nullptr) return;
       size_t oldCount = ptr.load(std::memory_order_relaxed)->reference_count--;
-      if(!ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 1) {
-        delete ptr.load(std::memory_order_relaxed);
-        return;
+
+      bool executeDelete = false;
+
+      if(ptr.load(std::memory_order_relaxed)->is_continuation_deferred && oldCount == 3) {
+        ptr.load(std::memory_order_relaxed)->continuation_process_deferred = {};
+        ptr.load(std::memory_order_relaxed)->continuation_process_deferred_wait = {};
+        executeDelete = true;
       }
-      if(ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 2) {
+      else if(!ptr.load(std::memory_order_relaxed)->is_continuation_async &&
+              !ptr.load(std::memory_order_relaxed)->is_continuation_deferred && oldCount == 1) {
+        executeDelete = true;
+      }
+      else if(ptr.load(std::memory_order_relaxed)->is_continuation_async && oldCount == 2) {
         if(ptr.load(std::memory_order_relaxed)->continuation_process_async.joinable()) {
           // signal termination to internal thread and wait until thread has been terminated
           while(ptr.load(std::memory_order_relaxed)->continuation_process_async_terminated == false) {
@@ -562,8 +570,14 @@ namespace cppext {
           }
           ptr.load(std::memory_order_relaxed)->continuation_process_async.join();
         }
-        // delete the shared_state
+        executeDelete = true;
+      }
+
+      // delete the shared_state?
+      if(executeDelete) {
+        assert(ptr.load(std::memory_order_relaxed)->reference_count == 0);
         delete ptr.load(std::memory_order_relaxed);
+        ptr.store(nullptr, std::memory_order_relaxed);
       }
     }
 
@@ -588,7 +602,7 @@ namespace cppext {
     void shared_state_ptr::make_new(size_t length) {
       free();
       ptr = new shared_state<T>(length);
-      ptr.load(std::memory_order_relaxed)->reference_count++;
+      ptr.load(std::memory_order_relaxed)->reference_count = 1;
     }
 
     inline shared_state_base* shared_state_ptr::operator->() {

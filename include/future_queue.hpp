@@ -305,6 +305,9 @@ namespace cppext {
         notifyerQueue_previousData(0)
       {}
 
+      /** Destructor must be virtual so the destructor of the derived class gets called. */
+      virtual ~shared_state_base() {}
+
       /** reference count. See shared_state_ptr for further documentation. */
       std::atomic<size_t> reference_count{0};
 
@@ -378,12 +381,6 @@ namespace cppext {
       : shared_state_base(length), buffers(length+1)
       {}
 
-      ~shared_state() {
-        if(is_continuation_async) {               // FIXME this is never called, as the async thread still holds the reference!
-          continuation_process_async.join();
-        }
-      }
-
       /** vector of buffers - allocation is done in the constructor */
       std::vector<T> buffers;
 
@@ -395,13 +392,6 @@ namespace cppext {
       shared_state(size_t length)
       : shared_state_base(length)
       {}
-
-      ~shared_state() {
-        if(is_continuation_async) {               // FIXME this is never called, as the async thread still holds the reference!
-          continuation_process_async.join();
-        }
-      }
-
     };
 
   } // namespace detail

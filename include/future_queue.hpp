@@ -74,8 +74,18 @@ namespace cppext {
         operator bool() const;
 
       private:
+
+        /// Decrease reference counter and check if target shared_state should be deleted
         void free();
 
+        /// Obtain the target pointer without a strict memory order.
+        shared_state_base* get() const;
+
+        /// Set the target pointer without a strict memory order.
+        void set(shared_state_base *ptr_);
+
+        /// Target pointer. This is defined as std::atomic to allow implementing atomic_store() and atomic_load().
+        /// Outside those functions always std::memory_order_relaxed is used.
         std::atomic<shared_state_base*> ptr;
     };
 
@@ -397,6 +407,10 @@ namespace cppext {
   } // namespace detail
 
   /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
+  /** Implementations of non-member functions */
+  /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
 
   /** This function expects two forward iterators pointing to a region of a container of future_queue objects. It
    *  returns a future_queue which will receive the index of each queue relative to the iterator begin when the
@@ -459,6 +473,7 @@ namespace cppext {
       // obtain notification queue for any update to any queue
       auto anyNotify = when_any(begin,end);
 
+      // define function to be executed (inside the notifyer queue) on non-blocking functions like pop() or empty()
       notifyerQueue.d->continuation_process_deferred = std::function<void(void)>( [notifyerQueue, participants] () mutable {
         bool empty = false;
         for(auto &q: participants) {
@@ -469,6 +484,7 @@ namespace cppext {
         if(!empty) notifyerQueue.push();
       } );
 
+      // define function to be executed (inside the notifyer queue) on blocking functions like pop_wait() or wait()
       notifyerQueue.d->continuation_process_deferred_wait = std::function<void(void)>( [notifyerQueue, participants, anyNotify] () mutable {
         while(true) {
           anyNotify.pop_wait();
@@ -483,6 +499,8 @@ namespace cppext {
         notifyerQueue.push();
       } );
 
+      // set flag marking the notifyerQueue a when_all continuation and save the notification queue of the when_any
+      // as the origin.
       notifyerQueue.d->is_continuation_when_all = true;
       notifyerQueue.d->continuation_origin = anyNotify;
 
@@ -513,6 +531,10 @@ namespace cppext {
 
 
   /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
+  /** Implementation of shared_state_ptr */
+  /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
 
   namespace detail {
 
@@ -521,14 +543,16 @@ namespace cppext {
     {}
 
     inline shared_state_ptr::shared_state_ptr(const shared_state_ptr &other) {
-      ptr = other.ptr.load(std::memory_order_relaxed);
-      ptr.load(std::memory_order_relaxed)->reference_count++;
+      // Copy the pointer and increase the reference count
+      set(other.get());
+      get()->reference_count++;
     }
 
     inline shared_state_ptr& shared_state_ptr::operator=(const shared_state_ptr &other) {
+      // Free previous target, copy the new pointer and increase its reference count
       free();
-      ptr = other.ptr.load(std::memory_order_relaxed);
-      ptr.load(std::memory_order_relaxed)->reference_count++;
+      set(other.get());
+      get()->reference_count++;
       return *this;
     }
 
@@ -536,37 +560,45 @@ namespace cppext {
       free();
     }
 
+    inline shared_state_base* shared_state_ptr::get() const {
+      return ptr.load(std::memory_order_relaxed);
+    }
+
+    inline void shared_state_ptr::set(shared_state_base *ptr_) {
+      ptr.store(ptr_, std::memory_order_relaxed);
+    }
+
     inline void shared_state_ptr::free() {
 
       // Don't do anything if called on a nullptr (i.e. default constructed or already destroyed)
-      if(ptr.load(std::memory_order_relaxed) == nullptr) return;
+      if(get() == nullptr) return;
 
       // Reduce reference count but atomically keep the old reference counter. Note that the std::memory_order_relaxed
       // refers to the access to the pointer not to the reference counter.
-      size_t oldCount = ptr.load(std::memory_order_relaxed)->reference_count--;
+      size_t oldCount = get()->reference_count--;
 
       // Determine whether we need to destroy the shared state depending on possible internal references.
       bool executeDelete = false;
 
       // Standard case: no continuation. If the last user is just destroying its reference we delete the shared state.
-      if(oldCount == 1 && !ptr.load(std::memory_order_relaxed)->is_continuation_async &&
-                          !ptr.load(std::memory_order_relaxed)->is_continuation_deferred &&
-                          !ptr.load(std::memory_order_relaxed)->is_continuation_when_all    ) {
+      if(oldCount == 1 && !get()->is_continuation_async &&
+                          !get()->is_continuation_deferred &&
+                          !get()->is_continuation_when_all    ) {
         executeDelete = true;
       }
       // Deferred continuations (incl. when_all) have two internal use counts due to the two std::functions, so we need
       // to remove those functions first.
-      else if(oldCount == 3 && ( ptr.load(std::memory_order_relaxed)->is_continuation_deferred ||
-                            ptr.load(std::memory_order_relaxed)->is_continuation_when_all    ) ) {
-        ptr.load(std::memory_order_relaxed)->continuation_process_deferred = {};
-        ptr.load(std::memory_order_relaxed)->continuation_process_deferred_wait = {};
+      else if(oldCount == 3 && ( get()->is_continuation_deferred ||
+                                 get()->is_continuation_when_all    ) ) {
+        get()->continuation_process_deferred = {};
+        get()->continuation_process_deferred_wait = {};
         executeDelete = true;
       }
       // Async continuations have one internal use count inside their thread, so we need to terminate the thread first.
-      else if(oldCount == 2 && ptr.load(std::memory_order_relaxed)->is_continuation_async) {
-        if(ptr.load(std::memory_order_relaxed)->continuation_process_async.joinable()) {
+      else if(oldCount == 2 && get()->is_continuation_async) {
+        if(get()->continuation_process_async.joinable()) {
           // Signal termination to internal thread and wait until thread has been terminated
-          while(ptr.load(std::memory_order_relaxed)->continuation_process_async_terminated == false) {
+          while(get()->continuation_process_async_terminated == false) {
             // Push a detail::TerminateInternalThread exception into the queue which the internal thread is potentially
             // waiting on.
             try {
@@ -576,17 +608,17 @@ namespace cppext {
               // Special case: the origin queue is a continuation itself (deferred or when_all) - we need to push the
               // exception to the origin of the origin to actually reach the internal thread, since deferred/when_all
               // continuations do not really use their own queue
-              if( ptr.load(std::memory_order_relaxed)->continuation_origin.d->is_continuation_deferred ||
-                  ptr.load(std::memory_order_relaxed)->continuation_origin.d->is_continuation_when_all    ) {
-                ptr.load(std::memory_order_relaxed)->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
+              if( get()->continuation_origin.d->is_continuation_deferred ||
+                  get()->continuation_origin.d->is_continuation_when_all    ) {
+                get()->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
               }
               // Standard case: just push the exception to the origin queue of the continuation
               else {
-                ptr.load(std::memory_order_relaxed)->continuation_origin.push_exception(std::current_exception());
+                get()->continuation_origin.push_exception(std::current_exception());
               }
             }
           }
-          ptr.load(std::memory_order_relaxed)->continuation_process_async.join();
+          get()->continuation_process_async.join();
         }
         executeDelete = true;
       }
@@ -594,25 +626,25 @@ namespace cppext {
       // delete the shared_state?
       if(executeDelete) {
         // Now that all potential internal references have been cleared the reference count must be 0
-        assert(ptr.load(std::memory_order_relaxed)->reference_count == 0);
-        delete ptr.load(std::memory_order_relaxed);
-        ptr.store(nullptr, std::memory_order_relaxed);
+        assert(get()->reference_count == 0);
+        delete get();
+        set(nullptr);
       }
     }
 
     inline void shared_state_ptr::atomic_store(shared_state_ptr &other) {
       free();
-      if(other.ptr.load(std::memory_order_relaxed) != nullptr) {
-        other.ptr.load(std::memory_order_relaxed)->reference_count++;
+      if(other.get() != nullptr) {
+        other.get()->reference_count++;
       }
       ptr.store(other.ptr);
     }
 
     inline shared_state_ptr shared_state_ptr::atomic_load() const {
       shared_state_ptr p;
-      p.ptr = ptr.load();
-      if(p.ptr.load(std::memory_order_relaxed) != nullptr) {
-        p.ptr.load(std::memory_order_relaxed)->reference_count++;
+      p.set(ptr.load());
+      if(p.get() != nullptr) {
+        p.get()->reference_count++;
       }
       return p;
     }
@@ -621,34 +653,40 @@ namespace cppext {
     void shared_state_ptr::make_new(size_t length) {
       free();
       ptr = new shared_state<T>(length);
-      ptr.load(std::memory_order_relaxed)->reference_count = 1;
+      get()->reference_count = 1;
     }
 
     inline shared_state_base* shared_state_ptr::operator->() {
-      assert(ptr.load(std::memory_order_relaxed) != nullptr);
-      return ptr.load(std::memory_order_relaxed);
+      assert(get() != nullptr);
+      return get();
     }
 
     inline const shared_state_base* shared_state_ptr::operator->() const {
-      assert(ptr.load(std::memory_order_relaxed) != nullptr);
-      return ptr.load(std::memory_order_relaxed);
+      assert(get() != nullptr);
+      return get();
     }
 
     template<typename T>
     shared_state<T>* shared_state_ptr::cast() {
-      assert(ptr.load(std::memory_order_relaxed) != nullptr);
-      return static_cast<shared_state<T>*>(ptr.load(std::memory_order_relaxed));
+      assert(get() != nullptr);
+      return static_cast<shared_state<T>*>(get());
     }
 
     inline shared_state_ptr::operator bool() const {
-      return ptr.load(std::memory_order_relaxed) != nullptr;
+      return get() != nullptr;
     }
 
   } // namespace detail
 
   /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
+  /** Implementation of future_queue_base */
+  /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
 
   inline size_t future_queue_base::write_available() const {
+    // Obtain indices in this particular order to ensure consistency. Result might be too small (but not too big) if
+    // writing happens concurrently.
     size_t l_writeIndex = d->writeIndex;
     size_t l_readIndex = d->readIndex;
     if(l_writeIndex - l_readIndex < d->nBuffers-1) {
@@ -660,6 +698,7 @@ namespace cppext {
   }
 
   inline size_t future_queue_base::read_available() const {
+    // Single consumer, so atomicity doesn't matter
     return d->readIndexMax - d->readIndex;
   }
 
@@ -799,6 +838,10 @@ namespace cppext {
   }
 
   /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
+  /** Implementation of future_queue */
+  /*********************************************************************************************************************/
+  /*********************************************************************************************************************/
 
   template<typename T, typename FEATURES>
   future_queue<T,FEATURES>::future_queue(size_t length)
@@ -808,6 +851,11 @@ namespace cppext {
   template<typename T, typename FEATURES>
   future_queue<T,FEATURES>::future_queue() {}
 
+
+  /*********************************************************************************************************************/
+  /** Various implementations of push(). */
+
+  /** This push() is for non-void data types passed by Rvalue reference */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   bool future_queue<T,FEATURES>::push(U&& t) {
@@ -834,13 +882,16 @@ namespace cppext {
     return true;
   }
 
+  /** This push() is for non-void data types passed by Lvalue reference */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< !std::is_same<U, void>::value
                                                 && std::is_copy_constructible<T>::value, int >::type>
   bool future_queue<T,FEATURES>::push(const U& t) {
+    // Create copy and pass this copy as an Rvalue reference to the other implementation
     return push(T(t));
   }
 
+  /** This push() is for void data type */
   template<typename T, typename FEATURES>
   bool future_queue<T,FEATURES>::push(void) {
     static_assert( std::is_same<T, void>::value, "future_queue<T,FEATURES>::push(void) may only be called for T = void." );
@@ -863,6 +914,7 @@ namespace cppext {
     return true;
   }
 
+  /** This push_overwrite() is for non-void data types passed by Rvalue reference */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   bool future_queue<T,FEATURES>::push_overwrite(U&& t) {
@@ -908,13 +960,19 @@ namespace cppext {
     return ret;
   }
 
+  /** This push_overwrite() is for non-void data types passed by Lvalue reference */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< !std::is_same<U, void>::value
                                                 && std::is_copy_constructible<T>::value, int >::type>
   bool future_queue<T,FEATURES>::push_overwrite(const U& t) {
+    // Create copy and pass this copy as an Rvalue reference to the other implementation
     return push_overwrite(T(t));
   }
 
+  /*********************************************************************************************************************/
+  /** Various implementations of pop(). */
+
+  /** This pop() is for non-void data types */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   bool future_queue<T,FEATURES>::pop(U& t) {
@@ -945,6 +1003,7 @@ namespace cppext {
     }
   }
 
+  /** This pop() is for all data types (for non-void data types the value will be discarded) */
   template<typename T, typename FEATURES>
   bool future_queue<T,FEATURES>::pop() {
     if( (d->is_continuation_deferred  || d->is_continuation_when_all) && !d->hasFrontOwnership ) {
@@ -967,6 +1026,7 @@ namespace cppext {
     }
   }
 
+  /** This pop_void() is for non-void data types */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   void future_queue<T,FEATURES>::pop_wait(U& t) {
@@ -994,6 +1054,7 @@ namespace cppext {
     if(e) std::rethrow_exception(e);
   }
 
+  /** This pop_wait() is for all data types (for non-void data types the value will be discarded) */
   template<typename T, typename FEATURES>
   void future_queue<T,FEATURES>::pop_wait() {
     if(!d->hasFrontOwnership) {
@@ -1013,6 +1074,10 @@ namespace cppext {
     if(e) std::rethrow_exception(e);
   }
 
+  /*********************************************************************************************************************/
+  /** Various implementations of front(). */
+
+  /** This front() is for non-void data types and a const *this */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   const U& future_queue<T,FEATURES>::front() const {
@@ -1021,6 +1086,7 @@ namespace cppext {
     future_queue_base::d.cast<T>()->buffers[d->readIndex%d->nBuffers];
   }
 
+  /** This front() is for non-void data types and a non-const *this */
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if< std::is_same<T,U>::value && !std::is_same<U, void>::value, int >::type>
   U& future_queue<T,FEATURES>::front() {
@@ -1029,8 +1095,19 @@ namespace cppext {
     return future_queue_base::d.cast<T>()->buffers[d->readIndex%d->nBuffers];
   }
 
+  /*********************************************************************************************************************/
+  /** Implementation of then() with helper classes. They are implemented as classes since we need partial template
+   *  specialisations. */
+
   namespace detail {
-    // helper functions used inside future_queue::then() - needed instead of a lambda since T might be void
+    // ----------------------------------------------------------------------------------------------------------------
+    // ----------------------------------------------------------------------------------------------------------------
+    // helper functions used inside future_queue::then()
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // continuation_process_deferred: function to be executed in a deferred continuation in non-blocking functions
+
+    // continuation_process_deferred for non-void data types
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred {
       continuation_process_deferred(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
@@ -1045,6 +1122,8 @@ namespace cppext {
       future_queue<TOUT> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_deferred for void input and non-void output data types
     template<typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred<void, FEATURES, TOUT, CALLABLE> {
       continuation_process_deferred(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
@@ -1057,6 +1136,8 @@ namespace cppext {
       future_queue<TOUT> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_deferred for non-void input and void output data types
     template<typename T, typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred<T, FEATURES, void, CALLABLE> {
       continuation_process_deferred(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
@@ -1072,6 +1153,8 @@ namespace cppext {
       future_queue<void> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_deferred for void input and void output data types
     template<typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred<void, FEATURES, void, CALLABLE> {
       continuation_process_deferred(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
@@ -1087,12 +1170,18 @@ namespace cppext {
       future_queue<void> q_output;
       CALLABLE callable;
     };
+
+    // factory for continuation_process_deferred
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     continuation_process_deferred<T,FEATURES,TOUT,CALLABLE> make_continuation_process_deferred(
         future_queue<T,FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input,q_output,callable};
     }
 
+    // ----------------------------------------------------------------------------------------------------------------
+    // continuation_process_deferred_wait: function to be executed in a deferred continuation in blocking functions
+
+    // continuation_process_deferred_wait for non-void data types
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred_wait {
       continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
@@ -1107,6 +1196,8 @@ namespace cppext {
       future_queue<TOUT> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_deferred_wait for void input and non-void output data types
     template<typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred_wait<void, FEATURES, TOUT, CALLABLE> {
       continuation_process_deferred_wait(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
@@ -1119,6 +1210,8 @@ namespace cppext {
       future_queue<TOUT> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_deferred_wait for non-void input and void output data types
     template<typename T, typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred_wait<T, FEATURES, void, CALLABLE> {
       continuation_process_deferred_wait(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
@@ -1134,6 +1227,8 @@ namespace cppext {
       future_queue<void> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_deferred_wait for void input and void output data types
     template<typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred_wait<void, FEATURES, void, CALLABLE> {
       continuation_process_deferred_wait(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
@@ -1147,12 +1242,18 @@ namespace cppext {
       future_queue<void> q_output;
       CALLABLE callable;
     };
+
+    // factory for continuation_process_deferred_wait
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     continuation_process_deferred_wait<T,FEATURES,TOUT,CALLABLE> make_continuation_process_deferred_wait(
         future_queue<T,FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input,q_output,callable};
     }
 
+    // ----------------------------------------------------------------------------------------------------------------
+    // continuation_process_async: function to be executed in the internal thread of a async continuation
+
+    // continuation_process_async for non-void data types
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_async {
       continuation_process_async(future_queue<T,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
@@ -1178,6 +1279,8 @@ namespace cppext {
       future_queue<TOUT> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_async for void input and non-void output data types
     template<typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_async<void, FEATURES, TOUT, CALLABLE> {
       continuation_process_async(future_queue<void,FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
@@ -1199,6 +1302,8 @@ namespace cppext {
       future_queue<TOUT> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_async for non-void input and void output data types
     template<typename T, typename FEATURES, typename CALLABLE>
     struct continuation_process_async<T, FEATURES, void, CALLABLE> {
       continuation_process_async(future_queue<T,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
@@ -1225,6 +1330,8 @@ namespace cppext {
       future_queue<void> q_output;
       CALLABLE callable;
     };
+
+    // continuation_process_async for void input and void output data types
     template<typename FEATURES, typename CALLABLE>
     struct continuation_process_async<void, FEATURES, void, CALLABLE> {
       continuation_process_async(future_queue<void,FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
@@ -1247,6 +1354,8 @@ namespace cppext {
       future_queue<void> q_output;
       CALLABLE callable;
     };
+
+    // factory for continuation_process_async
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     continuation_process_async<T,FEATURES,TOUT,CALLABLE> make_continuation_process_async(
         future_queue<T,FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
@@ -1254,12 +1363,16 @@ namespace cppext {
     }
   } // namespace detail
 
+  // ----------------------------------------------------------------------------------------------------------------
+  // ----------------------------------------------------------------------------------------------------------------
+  // actual implementation of future_queue::then()
+
   template<typename T, typename FEATURES>
   template<typename T2, typename FEATURES2, typename CALLABLE>
   future_queue<T2,FEATURES2> future_queue<T,FEATURES>::then(CALLABLE callable, std::launch policy) {
       future_queue<T,FEATURES> q_input(*this);
       if(policy == std::launch::deferred) {
-        future_queue<T2,FEATURES2> q_output(2);   // must be 2 so we can use push_overwrite_exception for shutdown
+        future_queue<T2,FEATURES2> q_output(1);
         q_output.d->continuation_process_deferred = detail::make_continuation_process_deferred(q_input, q_output, callable);
         q_output.d->continuation_process_deferred_wait = detail::make_continuation_process_deferred_wait(q_input, q_output, callable);
         q_output.d->continuation_origin = *this;

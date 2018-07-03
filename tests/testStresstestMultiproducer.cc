@@ -133,6 +133,7 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducerOverwrite) {
         q.pop_wait(value);
         size_t senderId = value / idsPerSender;
         assert(senderId < nSenders);
+        (void)senderId; // avoid warning in Release builds
       }
     } ); // end receiver thread
 

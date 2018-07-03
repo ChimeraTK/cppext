@@ -53,7 +53,7 @@ namespace cppext {
         ~shared_state_ptr();
 
         /// Atomically copy the pointer from another shared_state_ptr
-        void atomic_store(shared_state_ptr &other);
+        void atomic_store(const shared_state_ptr &other);
 
         /// Atomically load the pointer
         shared_state_ptr atomic_load() const;
@@ -610,10 +610,12 @@ namespace cppext {
               // continuations do not really use their own queue
               if( get()->continuation_origin.d->is_continuation_deferred ||
                   get()->continuation_origin.d->is_continuation_when_all    ) {
+                get()->continuation_origin.d->continuation_origin.d->notifyerQueue.d.atomic_store({});
                 get()->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
               }
               // Standard case: just push the exception to the origin queue of the continuation
               else {
+                get()->continuation_origin.d->notifyerQueue.d.atomic_store({});
                 get()->continuation_origin.push_exception(std::current_exception());
               }
             }
@@ -632,7 +634,7 @@ namespace cppext {
       }
     }
 
-    inline void shared_state_ptr::atomic_store(shared_state_ptr &other) {
+    inline void shared_state_ptr::atomic_store(const shared_state_ptr &other) {
       free();
       if(other.get() != nullptr) {
         other.get()->reference_count++;

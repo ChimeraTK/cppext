@@ -610,12 +610,10 @@ namespace cppext {
               // continuations do not really use their own queue
               if( get()->continuation_origin.d->is_continuation_deferred ||
                   get()->continuation_origin.d->is_continuation_when_all    ) {
-                get()->continuation_origin.d->continuation_origin.d->notifyerQueue.d.atomic_store({});
                 get()->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
               }
               // Standard case: just push the exception to the origin queue of the continuation
               else {
-                get()->continuation_origin.d->notifyerQueue.d.atomic_store({});
                 get()->continuation_origin.push_exception(std::current_exception());
               }
             }
@@ -876,7 +874,9 @@ namespace cppext {
     if(notify.d) {
       bool nret = notify.push(d->when_any_index);
       (void)nret;
-      assert(nret == true);
+      // This assert doesn't really hold. It might spuriously fail during destruction of certain combinations of
+      // continuations and when_any/when_all.
+      //assert(nret == true);
     }
     else {
       d->notifyerQueue_previousData++;

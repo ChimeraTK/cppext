@@ -281,7 +281,10 @@ namespace cppext {
       future_queue<T2,FEATURES2> then(CALLABLE callable, std::launch policy = std::launch::async);
 
       friend future_queue<T,FEATURES> atomic_load(const future_queue<T,FEATURES>* p) {
-        future_queue<T,FEATURES> q(p->d.atomic_load());
+        //future_queue<T,FEATURES> q(p->d.atomic_load());
+        future_queue<T,FEATURES> q;
+        auto ptr = p->d.atomic_load();
+        q.d.atomic_store(ptr);
         return q;
       }
 

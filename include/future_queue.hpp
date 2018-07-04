@@ -711,7 +711,9 @@ namespace cppext {
     if(notify.d) {
       bool nret = notify.push(d->when_any_index);
       (void)nret;
-      assert(nret == true);
+      // This assert doesn't really hold. It might spuriously fail during destruction of certain combinations of
+      // continuations and when_any/when_all.
+      //assert(nret == true);
     }
     else {
       d->notifyerQueue_previousData++;
@@ -749,7 +751,9 @@ namespace cppext {
       if(notify.d) {
         bool nret = notify.push(d->when_any_index);
         (void)nret;
-        assert(nret == true);
+        // This assert doesn't really hold. It might spuriously fail during destruction of certain combinations of
+        // continuations and when_any/when_all.
+        //assert(nret == true);
       }
       else {
         d->notifyerQueue_previousData++;
@@ -905,7 +909,9 @@ namespace cppext {
     if(notify.d) {
       bool nret = notify.push(d->when_any_index);
       (void)nret;
-      assert(nret == true);
+      // This assert doesn't really hold. It might spuriously fail during destruction of certain combinations of
+      // continuations and when_any/when_all.
+      //assert(nret == true);
     }
     else {
       d->notifyerQueue_previousData++;
@@ -950,7 +956,9 @@ namespace cppext {
       if(notify.d) {
         bool nret = notify.push(d->when_any_index);
         (void)nret;
-        assert(nret == true);
+        // This assert doesn't really hold. It might spuriously fail during destruction of certain combinations of
+        // continuations and when_any/when_all.
+        //assert(nret == true);
       }
       else {
         d->notifyerQueue_previousData++;

@@ -545,14 +545,14 @@ namespace cppext {
     inline shared_state_ptr::shared_state_ptr(const shared_state_ptr &other) {
       // Copy the pointer and increase the reference count
       set(other.get());
-      get()->reference_count++;
+      if(get() != nullptr) get()->reference_count++;
     }
 
     inline shared_state_ptr& shared_state_ptr::operator=(const shared_state_ptr &other) {
       // Free previous target, copy the new pointer and increase its reference count
       free();
       set(other.get());
-      get()->reference_count++;
+      if(get() != nullptr) get()->reference_count++;
       return *this;
     }
 

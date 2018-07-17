@@ -67,8 +67,9 @@ BOOST_AUTO_TEST_CASE(stresstest) {
             }
             else {
               ++consequtive_fails[k];
-              assert(consequtive_fails[k] < 1000);
+              assert(consequtive_fails[k] < 1030);
               if(consequtive_fails[k] > 100) usleep(1000);
+              if(consequtive_fails[k] > 1000) usleep(1000000);
             }
           }
         }

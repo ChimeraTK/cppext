@@ -73,6 +73,9 @@ namespace cppext {
         /// Check if pointer is initialised
         operator bool() const;
 
+        /// Check if two pointers are identical
+        bool operator==(const shared_state_ptr &other) const;
+
       private:
 
         /// Decrease reference counter and check if target shared_state should be deleted
@@ -137,6 +140,10 @@ namespace cppext {
 
       /** return length of the queue */
       size_t size() const;
+
+      /** Check whether two future_queue instances use the same shared state, i.e. represent the same queue. */
+      bool operator==(const future_queue_base &other) const;
+      bool operator!=(const future_queue_base &other) const;
 
     protected:
 
@@ -676,6 +683,10 @@ namespace cppext {
       return get() != nullptr;
     }
 
+    inline bool shared_state_ptr::operator==(const shared_state_ptr &other) const {
+      return get() == other.get();
+    }
+
   } // namespace detail
 
   /*********************************************************************************************************************/
@@ -789,6 +800,14 @@ namespace cppext {
     else {
       return d->continuation_origin.size();
     }
+  }
+
+  inline bool future_queue_base::operator==(const future_queue_base &other) const {
+    return d == other.d;
+  }
+
+  inline bool future_queue_base::operator!=(const future_queue_base &other) const {
+    return !(d == other.d);
   }
 
   inline future_queue_base::future_queue_base(const detail::shared_state_ptr &d_ptr_)

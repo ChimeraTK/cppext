@@ -33,6 +33,8 @@ BOOST_AUTO_TEST_CASE(testCopyConstruct) {
 
     cppext::future_queue<MovableDataType> queue2(queue1);
     BOOST_CHECK_EQUAL(queue2.size(), 10);
+    BOOST_CHECK( queue1 == queue2 );
+    BOOST_CHECK( !(queue1 != queue2) );
     queue2.push(MovableDataType(43));
     queue1.push(MovableDataType(44));
     queue2.push(MovableDataType(45));
@@ -69,6 +71,8 @@ BOOST_AUTO_TEST_CASE(testVector) {
     vectorOfQueues.push_back(queue1);
     cppext::future_queue<MovableDataType> queue2(8);
     vectorOfQueues.emplace_back(queue2);
+    BOOST_CHECK( queue1 != queue2 );
+    BOOST_CHECK( !(queue1 == queue2) );
 
     BOOST_CHECK_EQUAL(queue1.size(), 10);
     BOOST_CHECK_EQUAL(vectorOfQueues[0].size(), 10);

@@ -16,7 +16,6 @@ struct MyException {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testExceptions) {
-
   // setup a queue
   cppext::future_queue<std::string> q(8);
 
@@ -28,7 +27,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     MyException e;
     e.value = 42;
     throw e;
-  } catch (MyException &) {
+  }
+  catch(MyException&) {
     q.push_exception(std::current_exception());
   }
 
@@ -40,7 +40,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     MyException e;
     e.value = 43;
     throw e;
-  } catch (MyException &) {
+  }
+  catch(MyException&) {
     q.push_exception(std::current_exception());
   }
 
@@ -49,7 +50,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     MyException e;
     e.value = 44;
     throw e;
-  } catch (MyException &) {
+  }
+  catch(MyException&) {
     q.push_exception(std::current_exception());
   }
 
@@ -62,7 +64,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
   try {
     q.pop(v);
     BOOST_ERROR("Exception expected.");
-  } catch (MyException &e) {
+  }
+  catch(MyException& e) {
     BOOST_CHECK_EQUAL(e.value, 42);
   }
 
@@ -74,7 +77,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
   try {
     q.pop_wait(v);
     BOOST_ERROR("Exception expected.");
-  } catch (MyException &e) {
+  }
+  catch(MyException& e) {
     BOOST_CHECK_EQUAL(e.value, 43);
   }
 
@@ -84,7 +88,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
   try {
     v = q.front();
     BOOST_ERROR("Exception expected.");
-  } catch (MyException &e) {
+  }
+  catch(MyException& e) {
     BOOST_CHECK_EQUAL(e.value, 44);
   }
 
@@ -94,7 +99,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
   try {
     q.pop(v);
     BOOST_ERROR("Exception expected.");
-  } catch (MyException &e) {
+  }
+  catch(MyException& e) {
     BOOST_CHECK_EQUAL(e.value, 44);
   }
 

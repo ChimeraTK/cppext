@@ -9,7 +9,6 @@ BOOST_AUTO_TEST_SUITE(testSwap)
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testMoving) {
-
   std::vector<int> a{4, 5, 6};
   std::vector<int> b{9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
   std::vector<int> c{1, 2, 3, 4, 5, 6};
@@ -40,7 +39,6 @@ BOOST_AUTO_TEST_CASE(testMoving) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testSwapping) {
-
   std::vector<int> a_orig{4, 5, 6};
   std::vector<int> b_orig{9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
   std::vector<int> c_orig{1, 2, 3, 4, 5, 6};
@@ -50,8 +48,7 @@ BOOST_AUTO_TEST_CASE(testSwapping) {
   std::vector<int> b = b_orig;
   std::vector<int> c = c_orig;
 
-  cppext::future_queue<std::vector<int>, cppext::SWAP_DATA> swappingQueue(
-      2); // size of 2 means 3 internal buffers
+  cppext::future_queue<std::vector<int>, cppext::SWAP_DATA> swappingQueue(2); // size of 2 means 3 internal buffers
 
   swappingQueue.push(std::move(a));
   BOOST_CHECK_EQUAL(a.size(), 0);
@@ -59,8 +56,7 @@ BOOST_AUTO_TEST_CASE(testSwapping) {
   swappingQueue.push(std::move(b));
   BOOST_CHECK_EQUAL(b.size(), 0);
 
-  swappingQueue.pop(
-      c); // pop first internal buffer, which is then holding content of c_orig
+  swappingQueue.pop(c); // pop first internal buffer, which is then holding content of c_orig
   BOOST_CHECK(c == a_orig);
 
   a = d_orig;
@@ -69,8 +65,7 @@ BOOST_AUTO_TEST_CASE(testSwapping) {
   BOOST_CHECK(a == b_orig);
 
   swappingQueue.push(std::move(a));
-  BOOST_CHECK_EQUAL(
-      a.size(),
+  BOOST_CHECK_EQUAL(a.size(),
       0); // this is coming from the 3rd internal buffer which was not yet used
 
   swappingQueue.push(std::move(b));

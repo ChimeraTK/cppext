@@ -9,7 +9,6 @@ BOOST_AUTO_TEST_SUITE(testContinuations)
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
-
   cppext::future_queue<int> q(5);
   std::atomic<size_t> continuationCounter;
   continuationCounter = 0;
@@ -54,7 +53,6 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
-
   cppext::future_queue<int> q(5);
   std::atomic<size_t> continuationCounter;
   continuationCounter = 0;
@@ -71,7 +69,7 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
   BOOST_CHECK_EQUAL(continuationCounter, 0);
 
   std::thread sender([&q] {
-    for (int i = 1; i < 6; ++i) {
+    for(int i = 1; i < 6; ++i) {
       usleep(100000);
       q.push(i);
     }
@@ -109,7 +107,6 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
-
   cppext::future_queue<int> q(5);
 
   auto qc = q.then<std::string>(
@@ -151,7 +148,6 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testDeferredContinuation_void) {
-
   cppext::future_queue<void> q(5);
   std::atomic<size_t> continuationCounter;
   continuationCounter = 0;

@@ -19,29 +19,27 @@ static cppext::future_queue<std::string> inputQueue3(5);
 
 // define functions sending data in separate threads
 void senderThread1() {
-  for (int i = 0; i < 10; ++i) {
+  for(int i = 0; i < 10; ++i) {
     usleep(100000); // wait 0.1 second
     inputQueue1.push(i);
   }
 }
 void senderThread2() {
-  for (int i = 20; i < 30; ++i) {
+  for(int i = 20; i < 30; ++i) {
     inputQueue2.push(i);
   }
 }
 void senderThread3() {
-  for (int i = 20; i < 30; ++i) {
+  for(int i = 20; i < 30; ++i) {
     usleep(100000); // wait 0.1 second
     inputQueue3.push("Value " + std::to_string(i));
   }
 }
 
 int main() {
-
   // setup continuations
-  std::vector<cppext::future_queue<double>>
-      temp; // we should have a convenience function to avoid needing a
-            // temporary container...
+  std::vector<cppext::future_queue<double>> temp; // we should have a convenience function to avoid needing a
+                                                  // temporary container...
   temp.push_back(inputQueue1.then<double>([](int x) { return x / 2.; }));
   temp.push_back(inputQueue2.then<double>([](int x) { return x * 3.; }));
 
@@ -66,14 +64,15 @@ int main() {
   auto ready = cppext::when_any(temp2.begin(), temp2.end());
 
   // receive 10 values and print them
-  for (size_t i = 0; i < 10; ++i) {
+  for(size_t i = 0; i < 10; ++i) {
     size_t index;
     ready.pop_wait(index);
-    if (index == 0) {
+    if(index == 0) {
       double value;
       result12.pop(value);
       std::cout << value << std::endl;
-    } else {
+    }
+    else {
       std::string value;
       inputQueue3.pop(value);
       std::cout << value << std::endl;

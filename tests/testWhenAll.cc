@@ -13,17 +13,15 @@ struct MovableDataType {
   constexpr static int undef = -987654321;
   MovableDataType() {}
   explicit MovableDataType(int value) : _value(value) {}
-  MovableDataType(MovableDataType &&other) : _value(other._value) {
-    other._value = undef;
-  }
-  MovableDataType &operator=(MovableDataType &&other) {
+  MovableDataType(MovableDataType&& other) : _value(other._value) { other._value = undef; }
+  MovableDataType& operator=(MovableDataType&& other) {
     _value = other._value;
     other._value = undef;
     return *this;
   }
   int value() const { return _value; }
 
-private:
+ private:
   int _value{undef};
 };
 constexpr int MovableDataType::undef;
@@ -31,20 +29,18 @@ constexpr int MovableDataType::undef;
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(singleThreaded) {
-
   // create queues
   std::vector<cppext::future_queue<MovableDataType>> q;
-  for (size_t i = 0; i < 20; ++i)
-    q.emplace_back(10);
+  for(size_t i = 0; i < 20; ++i) q.emplace_back(10);
 
   // create notification queue
   auto nq = when_all(q.begin(), q.end());
 
   // create threads filling the queues
   std::vector<std::thread> threads;
-  for (size_t i = 0; i < 20; ++i) {
+  for(size_t i = 0; i < 20; ++i) {
     threads.emplace_back([q, i]() mutable {
-      for (size_t k = 0; k < 10; ++k) {
+      for(size_t k = 0; k < 10; ++k) {
         usleep(i * 1000);
         MovableDataType x(i * 100 + k);
         q[i].push(std::move(x));
@@ -53,9 +49,9 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
   }
 
   // receive data after checking the notification queue
-  for (size_t k = 0; k < 10; ++k) {
+  for(size_t k = 0; k < 10; ++k) {
     nq.pop_wait();
-    for (size_t i = 0; i < 20; ++i) {
+    for(size_t i = 0; i < 20; ++i) {
       BOOST_CHECK(q[i].empty() == false);
       MovableDataType x;
       q[i].pop(x);
@@ -65,8 +61,7 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
   usleep(100000);
   BOOST_CHECK(nq.empty() == true);
 
-  for (auto &t : threads)
-    t.join();
+  for(auto& t : threads) t.join();
 }
 
 /*********************************************************************************************************************/

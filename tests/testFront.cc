@@ -13,17 +13,15 @@ struct MovableDataType {
   constexpr static int undef = -987654321;
   MovableDataType() {}
   explicit MovableDataType(int value) : _value(value) {}
-  MovableDataType(MovableDataType &&other) : _value(other._value) {
-    other._value = undef;
-  }
-  MovableDataType &operator=(MovableDataType &&other) {
+  MovableDataType(MovableDataType&& other) : _value(other._value) { other._value = undef; }
+  MovableDataType& operator=(MovableDataType&& other) {
     _value = other._value;
     other._value = undef;
     return *this;
   }
   int value() const { return _value; }
 
-private:
+ private:
   int _value{undef};
 };
 constexpr int MovableDataType::undef;
@@ -31,19 +29,17 @@ constexpr int MovableDataType::undef;
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(singleThreaded) {
-
   // test up to a queue length of 100, start with 1
-  for (size_t length = 1; length <= 100; ++length) {
-
+  for(size_t length = 1; length <= 100; ++length) {
     cppext::future_queue<MovableDataType> q1(length);
 
     { // in combination with discarding pop()
-      for (size_t n = 0; n < length; ++n) {
+      for(size_t n = 0; n < length; ++n) {
         MovableDataType value(length + n + 120);
         BOOST_CHECK(q1.push(std::move(value)) == true);
         BOOST_CHECK_EQUAL(value.value(), MovableDataType::undef);
       }
-      for (size_t n = 0; n < length; ++n) {
+      for(size_t n = 0; n < length; ++n) {
         BOOST_CHECK(q1.empty() == false);
         BOOST_CHECK_EQUAL(q1.front().value(), length + n + 120);
         q1.pop();
@@ -51,12 +47,12 @@ BOOST_AUTO_TEST_CASE(singleThreaded) {
     }
 
     { // in combination with discarding pop_wait()
-      for (size_t n = 0; n < length; ++n) {
+      for(size_t n = 0; n < length; ++n) {
         MovableDataType value(length + n - 120);
         BOOST_CHECK(q1.push(std::move(value)) == true);
         BOOST_CHECK_EQUAL(value.value(), MovableDataType::undef);
       }
-      for (size_t n = 0; n < length; ++n) {
+      for(size_t n = 0; n < length; ++n) {
         BOOST_CHECK(q1.empty() == false);
         BOOST_CHECK_EQUAL(q1.front().value(), length + n - 120);
         q1.pop_wait();

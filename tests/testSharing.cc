@@ -16,17 +16,15 @@ struct MovableDataType {
   constexpr static int undef = -987654321;
   MovableDataType() {}
   explicit MovableDataType(int value) : _value(value) {}
-  MovableDataType(MovableDataType &&other) : _value(other._value) {
-    other._value = undef;
-  }
-  MovableDataType &operator=(MovableDataType &&other) {
+  MovableDataType(MovableDataType&& other) : _value(other._value) { other._value = undef; }
+  MovableDataType& operator=(MovableDataType&& other) {
     _value = other._value;
     other._value = undef;
     return *this;
   }
   int value() { return _value; }
 
-private:
+ private:
   int _value{undef};
 };
 constexpr int MovableDataType::undef;
@@ -34,7 +32,6 @@ constexpr int MovableDataType::undef;
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testCopyConstruct) {
-
   cppext::future_queue<MovableDataType> queue1(10);
   BOOST_CHECK_EQUAL(queue1.size(), 10);
   queue1.push(MovableDataType(42));
@@ -70,7 +67,6 @@ BOOST_AUTO_TEST_CASE(testCopyConstruct) {
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testVector) {
-
   std::vector<cppext::future_queue<MovableDataType>> vectorOfQueues;
 
   cppext::future_queue<MovableDataType> queue1(10);

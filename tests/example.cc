@@ -17,19 +17,18 @@ static cppext::future_queue<double> myQueue(5);
 
 // define function sending data in a separate thread
 void senderThread() {
-  for (size_t i = 0; i < 10; ++i) {
+  for(size_t i = 0; i < 10; ++i) {
     usleep(100000); // wait 0.1 second
     myQueue.push(i * 3.14);
   }
 }
 
 int main() {
-
   // launch sender thread
   std::thread myThread(&senderThread);
 
   // receive 10 values and print them
-  for (size_t i = 0; i < 10; ++i) {
+  for(size_t i = 0; i < 10; ++i) {
     double value;
     myQueue.pop_wait(value); // wait until new data has arrived
     std::cout << value << std::endl;

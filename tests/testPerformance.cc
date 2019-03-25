@@ -5,6 +5,7 @@ using namespace boost::unit_test_framework;
 #include <iterator>
 #include <thread>
 
+#include <boost/next_prior.hpp>
 #include <boost/lockfree/queue.hpp>
 #include <boost/lockfree/spsc_queue.hpp>
 #include <boost/thread/future.hpp>

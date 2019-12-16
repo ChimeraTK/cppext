@@ -53,6 +53,12 @@ namespace cppext {
       /// Copy by assignment
       shared_state_ptr& operator=(const shared_state_ptr& other);
 
+      /// Move constructor
+      shared_state_ptr(shared_state_ptr&& other);
+
+      /// Move by assignment
+      shared_state_ptr& operator=(shared_state_ptr&& other);
+
       /// Destructor
       ~shared_state_ptr();
 
@@ -238,6 +244,12 @@ namespace cppext {
     /** Copy assignment operator: After the assignment both *this and the other
      * object will refer to the same queue. */
     future_queue& operator=(const future_queue& other) = default;
+
+    /** Move constructor */
+    future_queue(future_queue&& other) = default;
+
+    /** Move assignment operator */
+    future_queue& operator=(future_queue&& other) = default;
 
     /** Push object t to the queue. Returns true if successful and false if queue
      * is full. */
@@ -602,6 +614,17 @@ namespace cppext {
       free();
       set(other.get());
       if(get() != nullptr) get()->reference_count++;
+      return *this;
+    }
+
+    inline shared_state_ptr::shared_state_ptr(shared_state_ptr&& other) {
+      set(other.get());
+      other.set(nullptr);
+    }
+
+    inline shared_state_ptr& shared_state_ptr::operator=(shared_state_ptr&& other) {
+      set(other.get());
+      other.set(nullptr);
       return *this;
     }
 

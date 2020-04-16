@@ -18,7 +18,7 @@ namespace cppext {
     final_act(const final_act&) = delete;
     final_act& operator=(const final_act&) = delete;
 
-    ~final_act() noexcept {
+    ~final_act() {
       if(invoke_) f_();
     }
 

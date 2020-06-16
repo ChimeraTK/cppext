@@ -131,6 +131,14 @@ Objects of the type ```T``` must be default constructible. Upon creation of the 
 
    Return length of the queue as specified in the constrution.
 
+10. ```template<typename T2, typename FEATURES2=MOVE_DATA, typename CALLABLE>
+    future_queue<T2,FEATURES2> then(CALLABLE callable, std::launch policy = std::launch::async);```
+
+    Create a continuation queue. For each element in the source queue, the ```callable``` is execuated and the queue element is passed as an argument to that function. The return value of the function is pushed into the output queue. The output queue is returned by the ```then()``` function. The launch policy allows to control whether the ```callable``` is called immediately in a separate thread (```std::launch::async```) or when the output queue is checked for new elements.
+    
+    Note: Exceptions in the input queue (cf. ```push_exception()```) will be passed on to the output queue without calling ```callable```. If ```callable``` throws an exception on its own, this exception is placed onto the output queue.
+
+
 ### non-member functions
 1. ```template<typename ITERATOR_TYPE> future_queue<size_t> when_any(ITERATOR_TYPE begin, ITERATOR_TYPE end);```
 

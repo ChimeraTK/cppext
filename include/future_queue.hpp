@@ -1170,16 +1170,24 @@ namespace cppext {
     // continuation_process_deferred for non-void data types
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred {
-      continuation_process_deferred(future_queue<T, FEATURES> q_input_,
-          future_queue<TOUT>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred(
+          future_queue<T, FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         // written this way so the callable is able to swap with the internal buffer
         if(q_input.empty()) return;
-        q_output.push(callable(q_input.front()));
-        q_input.pop();
+        try {
+          q_output.push(callable(q_input.front()));
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
+        }
+        try {
+          q_input.pop();
+        }
+        catch(...) {
+          // exception already pushed to the output queue, so ignore here
+        }
       }
       future_queue<T, FEATURES> q_input;
       future_queue<TOUT> q_output;
@@ -1189,10 +1197,8 @@ namespace cppext {
     // continuation_process_deferred for void input and non-void output data types
     template<typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred<void, FEATURES, TOUT, CALLABLE> {
-      continuation_process_deferred(future_queue<void, FEATURES> q_input_,
-          future_queue<TOUT>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred(
+          future_queue<void, FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         bool got_data = q_input.pop();
@@ -1206,17 +1212,25 @@ namespace cppext {
     // continuation_process_deferred for non-void input and void output data types
     template<typename T, typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred<T, FEATURES, void, CALLABLE> {
-      continuation_process_deferred(future_queue<T, FEATURES> q_input_,
-          future_queue<void>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred(
+          future_queue<T, FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         // written this way so the callable is able to swap with the internal buffer
         if(q_input.empty()) return;
-        callable(q_input.front());
-        q_output.push();
-        q_input.pop();
+        try {
+          callable(q_input.front());
+          q_output.push();
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
+        }
+        try {
+          q_input.pop();
+        }
+        catch(...) {
+          // exception already pushed to the output queue, so ignore here
+        }
       }
       future_queue<T, FEATURES> q_input;
       future_queue<void> q_output;
@@ -1226,16 +1240,19 @@ namespace cppext {
     // continuation_process_deferred for void input and void output data types
     template<typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred<void, FEATURES, void, CALLABLE> {
-      continuation_process_deferred(future_queue<void, FEATURES> q_input_,
-          future_queue<void>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred(
+          future_queue<void, FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        bool got_data = q_input.pop();
-        if(got_data) {
-          callable();
-          q_output.push();
+        try {
+          bool got_data = q_input.pop();
+          if(got_data) {
+            callable();
+            q_output.push();
+          }
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
         }
       }
       future_queue<void, FEATURES> q_input;
@@ -1246,11 +1263,7 @@ namespace cppext {
     // factory for continuation_process_deferred
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     continuation_process_deferred<T, FEATURES, TOUT, CALLABLE> make_continuation_process_deferred(
-        future_queue<T, FEATURES>
-            q_input,
-        future_queue<TOUT>
-            q_output,
-        CALLABLE callable) {
+        future_queue<T, FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input, q_output, callable};
     }
 
@@ -1261,16 +1274,24 @@ namespace cppext {
     // continuation_process_deferred_wait for non-void data types
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred_wait {
-      continuation_process_deferred_wait(future_queue<T, FEATURES> q_input_,
-          future_queue<TOUT>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred_wait(
+          future_queue<T, FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         // written this way so the callable is able to swap with the internal buffer
-        q_input.wait();
-        q_output.push(callable(q_input.front()));
-        q_input.pop();
+        try {
+          q_input.wait();
+          q_output.push(callable(q_input.front()));
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
+        }
+        try {
+          q_input.pop();
+        }
+        catch(...) {
+          // exception already pushed to the output queue, so ignore here
+        }
       }
       future_queue<T, FEATURES> q_input;
       future_queue<TOUT> q_output;
@@ -1281,14 +1302,17 @@ namespace cppext {
     // types
     template<typename FEATURES, typename TOUT, typename CALLABLE>
     struct continuation_process_deferred_wait<void, FEATURES, TOUT, CALLABLE> {
-      continuation_process_deferred_wait(future_queue<void, FEATURES> q_input_,
-          future_queue<TOUT>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred_wait(
+          future_queue<void, FEATURES> q_input_, future_queue<TOUT> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        q_input.pop_wait();
-        q_output.push(callable());
+        try {
+          q_input.pop_wait();
+          q_output.push(callable());
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
+        }
       }
       future_queue<void, FEATURES> q_input;
       future_queue<TOUT> q_output;
@@ -1299,17 +1323,25 @@ namespace cppext {
     // types
     template<typename T, typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred_wait<T, FEATURES, void, CALLABLE> {
-      continuation_process_deferred_wait(future_queue<T, FEATURES> q_input_,
-          future_queue<void>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred_wait(
+          future_queue<T, FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
         // written this way so the callable is able to swap with the internal buffer
-        q_input.wait();
-        callable(q_input.front());
-        q_output.push();
-        q_input.pop();
+        try {
+          q_input.wait();
+          callable(q_input.front());
+          q_output.push();
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
+        }
+        try {
+          q_input.pop();
+        }
+        catch(...) {
+          // exception already pushed to the output queue, so ignore here
+        }
       }
       future_queue<T, FEATURES> q_input;
       future_queue<void> q_output;
@@ -1319,15 +1351,18 @@ namespace cppext {
     // continuation_process_deferred_wait for void input and void output data types
     template<typename FEATURES, typename CALLABLE>
     struct continuation_process_deferred_wait<void, FEATURES, void, CALLABLE> {
-      continuation_process_deferred_wait(future_queue<void, FEATURES> q_input_,
-          future_queue<void>
-              q_output_,
-          CALLABLE callable_)
+      continuation_process_deferred_wait(
+          future_queue<void, FEATURES> q_input_, future_queue<void> q_output_, CALLABLE callable_)
       : q_input(q_input_), q_output(q_output_), callable(callable_) {}
       void operator()() {
-        q_input.pop_wait();
-        callable();
-        q_output.push();
+        try {
+          q_input.pop_wait();
+          callable();
+          q_output.push();
+        }
+        catch(...) {
+          q_output.push_exception(std::current_exception());
+        }
       }
       future_queue<void, FEATURES> q_input;
       future_queue<void> q_output;
@@ -1337,11 +1372,7 @@ namespace cppext {
     // factory for continuation_process_deferred_wait
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
     continuation_process_deferred_wait<T, FEATURES, TOUT, CALLABLE> make_continuation_process_deferred_wait(
-        future_queue<T, FEATURES>
-            q_input,
-        future_queue<TOUT>
-            q_output,
-        CALLABLE callable) {
+        future_queue<T, FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input, q_output, callable};
     }
 
@@ -1362,14 +1393,23 @@ namespace cppext {
           T* v;
           try {
             v = &(q_input.front());
+            // TODO how to handle full output queues?
+            q_output.push(callable(*v));
           }
           catch(detail::TerminateInternalThread&) {
             q_output.d->continuation_process_async_terminated = true;
             return;
           }
-          q_output.push(callable(*v));
-          q_input.pop();
-          // TODO how to handle full output queues?
+          catch(...) {
+            // TODO how to handle full output queues?
+            q_output.push_exception(std::current_exception());
+          }
+          try {
+            q_input.pop();
+          }
+          catch(...) {
+            // exception already pushed to the output queue, so ignore here
+          }
         }
       }
       future_queue<T, FEATURES> q_input;
@@ -1387,13 +1427,17 @@ namespace cppext {
         while(true) {
           try {
             q_input.pop_wait();
+            // TODO how to handle full output queues?
+            q_output.push(callable());
           }
           catch(detail::TerminateInternalThread&) {
             q_output.d->continuation_process_async_terminated = true;
             return;
           }
-          q_output.push(callable());
-          // TODO how to handle full output queues?
+          catch(...) {
+            // TODO how to handle full output queues?
+            q_output.push_exception(std::current_exception());
+          }
         }
       }
       future_queue<void, FEATURES> q_input;
@@ -1414,15 +1458,24 @@ namespace cppext {
           T* v;
           try {
             v = &(q_input.front());
+            callable(*v);
+            // TODO how to handle full output queues?
+            q_output.push();
           }
           catch(detail::TerminateInternalThread&) {
             q_output.d->continuation_process_async_terminated = true;
             return;
           }
-          callable(*v);
-          q_output.push();
-          q_input.pop();
-          // TODO how to handle full output queues?
+          catch(...) {
+            // TODO how to handle full output queues?
+            q_output.push_exception(std::current_exception());
+          }
+          try {
+            q_input.pop();
+          }
+          catch(...) {
+            // exception already pushed to the output queue, so ignore here
+          }
         }
       }
       future_queue<T, FEATURES> q_input;
@@ -1440,14 +1493,18 @@ namespace cppext {
         while(true) {
           try {
             q_input.pop_wait();
+            callable();
+            // TODO how to handle full output queues?
+            q_output.push();
           }
           catch(detail::TerminateInternalThread&) {
             q_output.d->continuation_process_async_terminated = true;
             return;
           }
-          callable();
-          q_output.push();
-          // TODO how to handle full output queues?
+          catch(...) {
+            // TODO how to handle full output queues?
+            q_output.push_exception(std::current_exception());
+          }
         }
       }
       future_queue<void, FEATURES> q_input;
@@ -1457,11 +1514,8 @@ namespace cppext {
 
     // factory for continuation_process_async
     template<typename T, typename FEATURES, typename TOUT, typename CALLABLE>
-    continuation_process_async<T, FEATURES, TOUT, CALLABLE> make_continuation_process_async(future_queue<T, FEATURES>
-                                                                                                q_input,
-        future_queue<TOUT>
-            q_output,
-        CALLABLE callable) {
+    continuation_process_async<T, FEATURES, TOUT, CALLABLE> make_continuation_process_async(
+        future_queue<T, FEATURES> q_input, future_queue<TOUT> q_output, CALLABLE callable) {
       return {q_input, q_output, callable};
     }
   } // namespace detail

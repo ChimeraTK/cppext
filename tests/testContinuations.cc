@@ -6,6 +6,8 @@ using namespace boost::unit_test_framework;
 
 BOOST_AUTO_TEST_SUITE(testContinuations)
 
+class MyException {};
+
 /*********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
@@ -13,8 +15,11 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
   std::atomic<size_t> continuationCounter;
   continuationCounter = 0;
 
+  bool throwException = false;
+
   auto qc = q.then<std::string>(
-      [&continuationCounter](int x) {
+      [&continuationCounter, &throwException](int x) {
+        if(throwException) throw MyException();
         ++continuationCounter;
         return std::to_string(x * 10);
       },
@@ -48,6 +53,31 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation) {
 
   qc.pop(res);
   BOOST_CHECK_EQUAL(res, "50");
+
+  // test with exception in input queue
+  try {
+    throw MyException();
+  }
+  catch(...) {
+    q.push_exception(std::current_exception());
+  }
+  BOOST_CHECK_THROW(qc.pop(res), MyException);
+  q.push(6);
+  qc.pop(res);
+  BOOST_CHECK_EQUAL(res, "60");
+  BOOST_CHECK(qc.pop() == false);
+
+  // test with exception thrown in continuation
+  throwException = true;
+  q.push(7);
+  BOOST_CHECK_THROW(qc.pop(res), MyException);
+  BOOST_CHECK(qc.pop() == false);
+
+  throwException = false;
+  q.push(8);
+  qc.pop(res);
+  BOOST_CHECK_EQUAL(res, "80");
+  BOOST_CHECK(qc.pop() == false);
 }
 
 /*********************************************************************************************************************/
@@ -57,8 +87,11 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
   std::atomic<size_t> continuationCounter;
   continuationCounter = 0;
 
+  bool throwException = false;
+
   auto qc = q.then<std::string>(
-      [&continuationCounter](int x) {
+      [&continuationCounter, &throwException](int x) {
+        if(throwException) throw MyException();
         ++continuationCounter;
         return std::to_string(x * 10);
       },
@@ -101,6 +134,31 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
   BOOST_CHECK_EQUAL(continuationCounter, 5);
   BOOST_CHECK_EQUAL(res, "50");
 
+  // test with exception in input queue
+  try {
+    throw MyException();
+  }
+  catch(...) {
+    q.push_exception(std::current_exception());
+  }
+  BOOST_CHECK_THROW(qc.pop_wait(res), MyException);
+  q.push(6);
+  qc.pop_wait(res);
+  BOOST_CHECK_EQUAL(res, "60");
+  BOOST_CHECK(qc.pop() == false);
+
+  // test with exception thrown in continuation
+  throwException = true;
+  q.push(7);
+  BOOST_CHECK_THROW(qc.pop_wait(res), MyException);
+  BOOST_CHECK(qc.pop() == false);
+
+  throwException = false;
+  q.push(8);
+  qc.pop_wait(res);
+  BOOST_CHECK_EQUAL(res, "80");
+  BOOST_CHECK(qc.pop() == false);
+
   sender.join();
 }
 
@@ -108,10 +166,12 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_wait) {
 
 BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
   cppext::future_queue<int> q(5);
+  std::atomic<bool> throwException{false};
 
   auto qc = q.then<std::string>(
-      [](int x) {
+      [&throwException](int x) {
         usleep(100000);
+        if(throwException) throw MyException();
         return std::to_string(x * 10);
       },
       std::launch::async);
@@ -143,6 +203,31 @@ BOOST_AUTO_TEST_CASE(testAsyncContinuation) {
   BOOST_CHECK(qc.empty() == true);
   qc.pop_wait(res);
   BOOST_CHECK_EQUAL(res, "50");
+
+  // test with exception in input queue
+  try {
+    throw MyException();
+  }
+  catch(...) {
+    q.push_exception(std::current_exception());
+  }
+  BOOST_CHECK_THROW(qc.pop_wait(res), MyException);
+  q.push(6);
+  qc.pop_wait(res);
+  BOOST_CHECK_EQUAL(res, "60");
+  BOOST_CHECK(qc.pop() == false);
+
+  // test with exception thrown in continuation
+  throwException = true;
+  q.push(7);
+  BOOST_CHECK_THROW(qc.pop_wait(res), MyException);
+  BOOST_CHECK(qc.pop() == false);
+
+  throwException = false;
+  q.push(8);
+  qc.pop_wait(res);
+  BOOST_CHECK_EQUAL(res, "80");
+  BOOST_CHECK(qc.pop() == false);
 }
 
 /*********************************************************************************************************************/
@@ -151,9 +236,11 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_void) {
   cppext::future_queue<void> q(5);
   std::atomic<size_t> continuationCounter;
   continuationCounter = 0;
+  bool throwException = false;
 
   auto qc = q.then<void>(
-      [&continuationCounter] {
+      [&continuationCounter, &throwException] {
+        if(throwException) throw MyException();
         ++continuationCounter;
         return;
       },
@@ -176,6 +263,29 @@ BOOST_AUTO_TEST_CASE(testDeferredContinuation_void) {
   BOOST_CHECK(qc.pop() == true);
   BOOST_CHECK(qc.pop() == true);
   BOOST_CHECK(qc.pop() == true);
+
+  // test with exception in input queue
+  try {
+    throw MyException();
+  }
+  catch(...) {
+    q.push_exception(std::current_exception());
+  }
+  BOOST_CHECK_THROW(qc.pop(), MyException);
+  q.push();
+  BOOST_CHECK(qc.pop() == true);
+  BOOST_CHECK(qc.pop() == false);
+
+  // test with exception thrown in continuation
+  throwException = true;
+  q.push();
+  BOOST_CHECK_THROW(qc.pop(), MyException);
+  BOOST_CHECK(qc.pop() == false);
+
+  throwException = false;
+  q.push();
+  BOOST_CHECK(qc.pop() == true);
+  BOOST_CHECK(qc.pop() == false);
 }
 
 /*********************************************************************************************************************/

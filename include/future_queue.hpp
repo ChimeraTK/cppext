@@ -56,12 +56,6 @@ namespace cppext {
       /// Destructor
       ~shared_state_ptr();
 
-      /// Atomically copy the pointer from another shared_state_ptr
-      void atomic_store(const shared_state_ptr& other);
-
-      /// Atomically load the pointer
-      shared_state_ptr atomic_load() const;
-
       /// Create new shared_state for type T
       template<typename T>
       void make_new(size_t length);
@@ -80,21 +74,18 @@ namespace cppext {
       /// Check if two pointers are identical
       bool operator==(const shared_state_ptr& other) const;
 
-     private:
-      /// Decrease reference counter and check if target shared_state should be
-      /// deleted
-      void free();
-
-      /// Obtain the target pointer without a strict memory order.
+      /// Obtain the target pointer
       shared_state_base* get() const;
 
-      /// Set the target pointer without a strict memory order.
+      /// Set the target pointer without incrementing the reference counter
       void set(shared_state_base* ptr_);
 
-      /// Target pointer. This is defined as std::atomic to allow implementing
-      /// atomic_store() and atomic_load(). Outside those functions always
-      /// std::memory_order_relaxed is used.
-      std::atomic<shared_state_base*> ptr;
+     private:
+      /// Decrease reference counter and check if target shared_state should be deleted
+      void free();
+
+      /// Target pointer
+      shared_state_base* ptr;
     };
 
     template<typename T>
@@ -165,12 +156,15 @@ namespace cppext {
     /** update readIndexMax after a write operation was completed */
     void update_read_index_max();
 
-    /** Set the notification queue in the shared state, as done in when_any. */
-    void setNotificationQueue(future_queue<size_t, MOVE_DATA>& notificationQueue, size_t indexToSend);
+    /** Set the notification queue in the shared state, as done in when_any. Returns the number of data in the queue
+     *  at the time the notification queue was set (atomically). */
+    size_t setNotificationQueue(future_queue<size_t, MOVE_DATA>& notificationQueue, size_t indexToSend);
 
-    /** Obtain the counter for the number of elements in the queue before
-     * setNotificationQueue() was called */
-    size_t getNotificationQueuePreviousData();
+    /** Send notification to notification queue if existing, otherwise increment the "previous data" counter */
+    void send_notification();
+
+    /** Decrement the "previous data" counter used in when_any(). */
+    void decrement_previous_data_counter();
 
     /** pointer to data used to allow sharing the queue (create multiple copies
      * which all refer to the same queue). */
@@ -318,16 +312,6 @@ namespace cppext {
     template<typename T2, typename FEATURES2 = MOVE_DATA, typename CALLABLE>
     future_queue<T2, FEATURES2> then(CALLABLE callable, std::launch policy = std::launch::async);
 
-    friend future_queue<T, FEATURES> atomic_load(const future_queue<T, FEATURES>* p) {
-      // future_queue<T,FEATURES> q(p->d.atomic_load());
-      future_queue<T, FEATURES> q;
-      auto ptr = p->d.atomic_load();
-      q.d.atomic_store(ptr);
-      return q;
-    }
-
-    friend void atomic_store(future_queue<T, FEATURES>* p, future_queue<T, FEATURES> r) { p->d.atomic_store(r.d); }
-
     typedef T value_type;
   };
 
@@ -335,13 +319,22 @@ namespace cppext {
 
   namespace detail {
 
+    struct when_any_notification_info {
+      /** Notification queue used to realise a wait_any logic. This queue is shared between all queues participating
+       *  in the same when_any. */
+      cppext::detail::shared_state_base* notifyerQueue{nullptr};
+
+      /** counter for the number of elements in the queue before when_any has added the notifyerQueue */
+      size_t notifyerQueue_previousData{0};
+    };
+
     /** Internal base class for holding the data which is shared between multiple
      * instances of the same queue. The base
      *  class does not depend on the data type and is used by future_queue_base. */
     struct shared_state_base {
       shared_state_base(size_t length)
       : nBuffers(length + 1), semaphores(length + 1), exceptions(length + 1), writeIndex(0), readIndexMax(0),
-        readIndex(0), hasFrontOwnership(false), notifyerQueue_previousData(0) {}
+        readIndex(0), hasFrontOwnership(false) {}
 
       /** Destructor must be virtual so the destructor of the derived class gets
        * called. */
@@ -411,13 +404,7 @@ namespace cppext {
        * will point to the original queue of which *this is the continuation. */
       future_queue_base continuation_origin;
 
-      /** Notification queue used to realise a wait_any logic. This queue is shared
-       * between all queues participating in the same when_any. */
-      future_queue<size_t> notifyerQueue;
-
-      /** counter for the number of elements in the queue before when_any has added
-       * the notifyerQueue */
-      std::atomic<size_t> notifyerQueue_previousData;
+      std::atomic<when_any_notification_info> when_any_notification;
     };
 
     /** Internal class for holding the data which is shared between multiple
@@ -480,18 +467,14 @@ namespace cppext {
     size_t summedLength = 0;
     for(ITERATOR_TYPE it = begin; it != end; ++it) summedLength += it->size();
 
-    // Create a notification queue in a shared pointer, so we can hand it on to
-    // the queues
+    // Create a notification queue, so we can hand it on to the queues
     future_queue<size_t> notifyerQueue(summedLength);
 
     // Distribute the pointer to the notification queue to all participating
     // queues
     size_t index = 0;
     for(ITERATOR_TYPE it = begin; it != end; ++it) {
-      it->setNotificationQueue(notifyerQueue, index);
-      // at this point, queue.notifyerQueue_previousData will no longer be
-      // modified by the sender side
-      size_t nPreviousValues = it->getNotificationQueuePreviousData();
+      size_t nPreviousValues = it->setNotificationQueue(notifyerQueue, index);
       for(size_t i = 0; i < nPreviousValues; ++i) notifyerQueue.push(index);
       ++index;
     }
@@ -607,9 +590,9 @@ namespace cppext {
 
     inline shared_state_ptr::~shared_state_ptr() { free(); }
 
-    inline shared_state_base* shared_state_ptr::get() const { return ptr.load(std::memory_order_relaxed); }
+    inline shared_state_base* shared_state_ptr::get() const { return ptr; }
 
-    inline void shared_state_ptr::set(shared_state_base* ptr_) { ptr.store(ptr_, std::memory_order_relaxed); }
+    inline void shared_state_ptr::set(shared_state_base* ptr_) { ptr = ptr_; }
 
     inline void shared_state_ptr::free() {
       // Don't do anything if called on a nullptr (i.e. default constructed or
@@ -681,23 +664,6 @@ namespace cppext {
       }
     }
 
-    inline void shared_state_ptr::atomic_store(const shared_state_ptr& other) {
-      free();
-      if(other.get() != nullptr) {
-        other.get()->reference_count++;
-      }
-      ptr.store(other.ptr);
-    }
-
-    inline shared_state_ptr shared_state_ptr::atomic_load() const {
-      shared_state_ptr p;
-      p.set(ptr.load());
-      if(p.get() != nullptr) {
-        p.get()->reference_count++;
-      }
-      return p;
-    }
-
     template<typename T>
     void shared_state_ptr::make_new(size_t length) {
       free();
@@ -751,6 +717,40 @@ namespace cppext {
     return d->readIndexMax - d->readIndex;
   }
 
+  inline void future_queue_base::send_notification() {
+    // if there is no notification queue, atomically increment counter while making sure now notification queue is
+    // placed concurrently
+    detail::when_any_notification_info info, info_n;
+    do {
+      info = d->when_any_notification.load(std::memory_order_acquire);
+      if(info.notifyerQueue) break;
+      info_n = info;
+      ++info_n.notifyerQueue_previousData;
+    } while(!d->when_any_notification.compare_exchange_weak(info, info_n));
+
+    // if there is a notification queue, push to it
+    if(info.notifyerQueue) {
+      future_queue<size_t, MOVE_DATA> n;
+      n.d.set(info.notifyerQueue);
+      bool nret = n.push(d->when_any_index);
+      n.d.set(nullptr); // prevent reference count from being decremented
+      (void)nret;
+      // This assert doesn't really hold. It might spuriously fail during destruction of certain combinations of
+      // continuations and when_any/when_all.
+      // assert(nret == true);
+    }
+  }
+
+  inline void future_queue_base::decrement_previous_data_counter() {
+    detail::when_any_notification_info info, info_n;
+    do {
+      info = d->when_any_notification.load(std::memory_order_acquire);
+      if(info.notifyerQueue) break; // no need to deal with this counter if notification queue present
+      info_n = info;
+      --info_n.notifyerQueue_previousData;
+    } while(!d->when_any_notification.compare_exchange_weak(info, info_n));
+  }
+
   inline bool future_queue_base::push_exception(std::exception_ptr exception) {
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
@@ -758,19 +758,7 @@ namespace cppext {
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
-    // send notification if requested
-    auto notify = atomic_load(&d->notifyerQueue);
-    if(notify.d) {
-      bool nret = notify.push(d->when_any_index);
-      (void)nret;
-      // This assert doesn't really hold. It might spuriously fail during
-      // destruction of certain combinations of continuations and
-      // when_any/when_all.
-      // assert(nret == true);
-    }
-    else {
-      d->notifyerQueue_previousData++;
-    }
+    send_notification();
     return true;
   }
 
@@ -798,20 +786,9 @@ namespace cppext {
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
 
-    // send notification if requested and if data wasn't overwritten
+    // send notification if data wasn't overwritten
     if(ret) {
-      auto notify = atomic_load(&d->notifyerQueue);
-      if(notify.d) {
-        bool nret = notify.push(d->when_any_index);
-        (void)nret;
-        // This assert doesn't really hold. It might spuriously fail during
-        // destruction of certain combinations of continuations and
-        // when_any/when_all.
-        // assert(nret == true);
-      }
-      else {
-        d->notifyerQueue_previousData++;
-      }
+      send_notification();
     }
     return ret;
   }
@@ -875,23 +852,30 @@ namespace cppext {
     } while(d->readIndexMax < newReadIndexMax);
   }
 
-  inline void future_queue_base::setNotificationQueue(
+  inline size_t future_queue_base::setNotificationQueue(
       future_queue<size_t, MOVE_DATA>& notificationQueue, size_t indexToSend) {
     if(!d->is_continuation_deferred) {
       d->when_any_index = indexToSend;
-      atomic_store(&(d->notifyerQueue), notificationQueue);
-    }
-    else {
-      d->continuation_origin.setNotificationQueue(notificationQueue, indexToSend);
-    }
-  }
 
-  inline size_t future_queue_base::getNotificationQueuePreviousData() {
-    if(!d->is_continuation_deferred) {
-      return d->notifyerQueue_previousData;
+      // create new info struct with notification queue
+      detail::when_any_notification_info info;
+      info.notifyerQueue = notificationQueue.d.get();
+      info.notifyerQueue_previousData = 0;
+
+      // atomically exchange info struct while making sure it has not been altered at the target in the mean time
+      detail::when_any_notification_info info_o;
+      do {
+        info_o = d->when_any_notification;
+      } while(!d->when_any_notification.compare_exchange_weak(info_o, info));
+
+      // artificially increment the reference count of the notification queue, since we have to store a plain pointer
+      // in the info struct rather than a shared_state_ptr (which is not trivially copyable).
+      info.notifyerQueue->reference_count++;
+
+      return info_o.notifyerQueue_previousData;
     }
     else {
-      return d->continuation_origin.getNotificationQueuePreviousData();
+      return d->continuation_origin.setNotificationQueue(notificationQueue, indexToSend);
     }
   }
 
@@ -914,26 +898,21 @@ namespace cppext {
   template<typename T, typename FEATURES>
   template<typename U, typename std::enable_if<std::is_same<T, U>::value && !std::is_same<U, void>::value, int>::type>
   bool future_queue<T, FEATURES>::push(U&& t) {
+    // obtain index to write to
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
+
+    // assign the payload data
     detail::data_assign(future_queue_base::d.cast<T>()->buffers[myIndex % d->nBuffers], std::move(t), FEATURES());
     d->exceptions[myIndex % d->nBuffers] = nullptr;
+
+    // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
-    update_read_index_max();
-    // send notification if requested
-    auto notify = atomic_load(&d->notifyerQueue);
-    if(notify.d) {
-      bool nret = notify.push(d->when_any_index);
-      (void)nret;
-      // This assert doesn't really hold. It might spuriously fail during
-      // destruction of certain combinations of continuations and
-      // when_any/when_all.
-      // assert(nret == true);
-    }
-    else {
-      d->notifyerQueue_previousData++;
-    }
+    update_read_index_max(); // basically only for read_available()
+
+    // deal with when_any notifications
+    send_notification();
     return true;
   }
 
@@ -952,25 +931,20 @@ namespace cppext {
   bool future_queue<T, FEATURES>::push(void) {
     static_assert(
         std::is_same<T, void>::value, "future_queue<T,FEATURES>::push(void) may only be called for T = void.");
+    // obtain index to write to
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
+
+    // assign the payload data
     d->exceptions[myIndex % d->nBuffers] = nullptr;
+
+    // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
-    update_read_index_max();
-    // send notification if requested
-    auto notify = atomic_load(&d->notifyerQueue);
-    if(notify.d) {
-      bool nret = notify.push(d->when_any_index);
-      (void)nret;
-      // This assert doesn't really hold. It might spuriously fail during
-      // destruction of certain combinations of continuations and
-      // when_any/when_all.
-      // assert(nret == true);
-    }
-    else {
-      d->notifyerQueue_previousData++;
-    }
+    update_read_index_max(); // basically only for read_available()
+
+    // deal with when_any notifications
+    send_notification();
     return true;
   }
 
@@ -981,12 +955,15 @@ namespace cppext {
   bool future_queue<T, FEATURES>::push_overwrite(U&& t) {
     assert(d->nBuffers - 1 > 1);
     bool ret = true;
+    // obtain index to write to, if necessary remove old data first
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) {
       if(d->semaphores[(myIndex - 1) % d->nBuffers].is_ready_and_reset()) {
         size_t expectedIndex = myIndex;
         bool success = d->writeIndex.compare_exchange_strong(expectedIndex, myIndex - 1);
         if(!success) {
+          // in case of a concurrent push_overwrite(), our data effectively just got overwritten by the other thread
+          // even before writing it...
           d->semaphores[(myIndex - 1) % d->nBuffers].unlock();
           return false;
         }
@@ -997,26 +974,19 @@ namespace cppext {
       }
       if(!obtain_write_slot(myIndex)) return false;
     }
+
+    // assign the payload data
     detail::data_assign(future_queue_base::d.cast<T>()->buffers[myIndex % d->nBuffers], std::move(t), FEATURES());
     d->exceptions[myIndex % d->nBuffers] = nullptr;
+
+    // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
 
-    // send notification if requested and if data wasn't overwritten
+    // deal with when_any notifications (unless data was overwritten)
     if(ret) {
-      auto notify = atomic_load(&d->notifyerQueue);
-      if(notify.d) {
-        bool nret = notify.push(d->when_any_index);
-        (void)nret;
-        // This assert doesn't really hold. It might spuriously fail during
-        // destruction of certain combinations of continuations and
-        // when_any/when_all.
-        // assert(nret == true);
-      }
-      else {
-        d->notifyerQueue_previousData++;
-      }
+      send_notification();
     }
     return ret;
   }
@@ -1054,7 +1024,7 @@ namespace cppext {
       assert(d->readIndex < d->writeIndex);
       d->readIndex++;
       d->hasFrontOwnership = false;
-      d->notifyerQueue_previousData--;
+      decrement_previous_data_counter();
       if(e) std::rethrow_exception(e);
       return true;
     }
@@ -1078,7 +1048,7 @@ namespace cppext {
       assert(d->readIndex < d->writeIndex);
       d->readIndex++;
       d->hasFrontOwnership = false;
-      d->notifyerQueue_previousData--;
+      decrement_previous_data_counter();
       if(e) std::rethrow_exception(e);
       return true;
     }
@@ -1108,7 +1078,7 @@ namespace cppext {
     }
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
-    d->notifyerQueue_previousData--;
+    decrement_previous_data_counter();
     if(e) std::rethrow_exception(e);
   }
 
@@ -1129,7 +1099,7 @@ namespace cppext {
     }
     assert(d->readIndex < d->writeIndex);
     d->readIndex++;
-    d->notifyerQueue_previousData--;
+    decrement_previous_data_counter();
     if(e) std::rethrow_exception(e);
   }
 

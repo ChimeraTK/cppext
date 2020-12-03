@@ -160,8 +160,20 @@ namespace cppext {
      *  at the time the notification queue was set (atomically). */
     size_t setNotificationQueue(future_queue<size_t, MOVE_DATA>& notificationQueue, size_t indexToSend);
 
-    /** Send notification to notification queue if existing, otherwise increment the "previous data" counter */
-    void send_notification();
+    /** Atomically return the notification queue or increment the "previous data" counter (for wait_any).
+     *  The counter is incremented if no notification queue is set. This allows wait_any to determine how many pending
+     *  values are in the value queue, so it can place corresponding notifications to the notification queue.
+     *
+     *  The call to this function must take place before signalling the receiving side of the queue, so the
+     *  corresponding call to decrement_previous_data_counter() is properly synchronised. */
+    cppext::detail::shared_state_base* get_notification_queue();
+
+    /** Send notification to notification queue (if not nullptr). The notification queue must be obtained before
+     *  through get_notification_queue().
+     *
+     *  The call to this function must take place after signalling the receiving side of the queue, so the value is
+     *  available right away when receiving the notification. */
+    void send_notification(cppext::detail::shared_state_base* notification_queue);
 
     /** Decrement the "previous data" counter used in when_any(). */
     void decrement_previous_data_counter();
@@ -717,7 +729,7 @@ namespace cppext {
     return d->readIndexMax - d->readIndex;
   }
 
-  inline void future_queue_base::send_notification() {
+  inline cppext::detail::shared_state_base* future_queue_base::get_notification_queue() {
     // if there is no notification queue, atomically increment counter while making sure now notification queue is
     // placed concurrently
     detail::when_any_notification_info info, info_n;
@@ -727,11 +739,14 @@ namespace cppext {
       info_n = info;
       ++info_n.notifyerQueue_previousData;
     } while(!d->when_any_notification.compare_exchange_weak(info, info_n));
+    return info.notifyerQueue;
+  }
 
+  inline void future_queue_base::send_notification(cppext::detail::shared_state_base* notification_queue) {
     // if there is a notification queue, push to it
-    if(info.notifyerQueue) {
+    if(notification_queue) {
       future_queue<size_t, MOVE_DATA> n;
-      n.d.set(info.notifyerQueue);
+      n.d.set(notification_queue);
       bool nret = n.push(d->when_any_index);
       n.d.set(nullptr); // prevent reference count from being decremented
       (void)nret;
@@ -747,30 +762,45 @@ namespace cppext {
       info = d->when_any_notification.load(std::memory_order_acquire);
       if(info.notifyerQueue) break; // no need to deal with this counter if notification queue present
       info_n = info;
+      assert(info_n.notifyerQueue_previousData > 0);
       --info_n.notifyerQueue_previousData;
     } while(!d->when_any_notification.compare_exchange_weak(info, info_n));
   }
 
   inline bool future_queue_base::push_exception(std::exception_ptr exception) {
+    // obtain index to write to
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) return false;
+
+    // assign the payload data (data buffer is ignored if exception is set)
     d->exceptions[myIndex % d->nBuffers] = exception;
+
+    // obtain notification queue or increment previous data counter (for when_any)
+    auto notification_queue = get_notification_queue();
+
+    // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
-    send_notification();
+
+    // deal with when_any notifications
+    send_notification(notification_queue);
     return true;
   }
 
   inline bool future_queue_base::push_overwrite_exception(std::exception_ptr exception) {
     assert(d->nBuffers - 1 > 1);
     bool ret = true;
+
+    // obtain index to write to, if necessary remove old data first
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) {
       if(d->semaphores[(myIndex - 1) % d->nBuffers].is_ready_and_reset()) {
         size_t expectedIndex = myIndex;
         bool success = d->writeIndex.compare_exchange_strong(expectedIndex, myIndex - 1);
         if(!success) {
+          // in case of a concurrent push_overwrite(), our data effectively just got overwritten by the other thread
+          // even before writing it...
           d->semaphores[(myIndex - 1) % d->nBuffers].unlock();
           return false;
         }
@@ -781,14 +811,24 @@ namespace cppext {
       }
       if(!obtain_write_slot(myIndex)) return false;
     }
+
+    // assign the payload data (data buffer is ignored if exception is set)
     d->exceptions[myIndex % d->nBuffers] = exception;
+
+    // obtain notification queue or increment previous data counter (for when_any) (unless data was overwritten)
+    cppext::detail::shared_state_base* notification_queue;
+    if(ret) {
+      notification_queue = get_notification_queue();
+    }
+
+    // obtain notification queue or increment previous data counter (for when_any)
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max();
 
-    // send notification if data wasn't overwritten
+    // deal with when_any notifications (unless data was overwritten)
     if(ret) {
-      send_notification();
+      send_notification(notification_queue);
     }
     return ret;
   }
@@ -906,13 +946,16 @@ namespace cppext {
     detail::data_assign(future_queue_base::d.cast<T>()->buffers[myIndex % d->nBuffers], std::move(t), FEATURES());
     d->exceptions[myIndex % d->nBuffers] = nullptr;
 
+    // obtain notification queue or increment previous data counter (for when_any)
+    auto notification_queue = get_notification_queue();
+
     // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max(); // basically only for read_available()
 
     // deal with when_any notifications
-    send_notification();
+    send_notification(notification_queue);
     return true;
   }
 
@@ -938,13 +981,16 @@ namespace cppext {
     // assign the payload data
     d->exceptions[myIndex % d->nBuffers] = nullptr;
 
+    // obtain notification queue or increment previous data counter (for when_any)
+    auto notification_queue = get_notification_queue();
+
     // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
     update_read_index_max(); // basically only for read_available()
 
     // deal with when_any notifications
-    send_notification();
+    send_notification(notification_queue);
     return true;
   }
 
@@ -955,6 +1001,7 @@ namespace cppext {
   bool future_queue<T, FEATURES>::push_overwrite(U&& t) {
     assert(d->nBuffers - 1 > 1);
     bool ret = true;
+
     // obtain index to write to, if necessary remove old data first
     size_t myIndex;
     if(!obtain_write_slot(myIndex)) {
@@ -979,6 +1026,12 @@ namespace cppext {
     detail::data_assign(future_queue_base::d.cast<T>()->buffers[myIndex % d->nBuffers], std::move(t), FEATURES());
     d->exceptions[myIndex % d->nBuffers] = nullptr;
 
+    // obtain notification queue or increment previous data counter (for when_any) (unless data was overwritten)
+    cppext::detail::shared_state_base* notification_queue;
+    if(ret) {
+      notification_queue = get_notification_queue();
+    }
+
     // signal receiving end
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
     d->semaphores[myIndex % d->nBuffers].unlock();
@@ -986,7 +1039,7 @@ namespace cppext {
 
     // deal with when_any notifications (unless data was overwritten)
     if(ret) {
-      send_notification();
+      send_notification(notification_queue);
     }
     return ret;
   }

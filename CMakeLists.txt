@@ -48,7 +48,7 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION include/ChimeraTK/cpp
 
 # Create cmake configuration files for downstream projects
 set(${PROJECT_NAME}_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
-set(${PROJECT_NAME}_LIBRARIES "")
+set(${PROJECT_NAME}_LIBRARIES "atomic")
 set(${PROJECT_NAME}_LIBRARY_DIRS "")
 # already set: ${PROJECT_NAME}_CXX_FLAGS
 include(${CMAKE_SOURCE_DIR}/cmake/create_cmake_config_files.cmake)

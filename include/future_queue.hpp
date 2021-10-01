@@ -1027,7 +1027,7 @@ namespace cppext {
     d->exceptions[myIndex % d->nBuffers] = nullptr;
 
     // obtain notification queue or increment previous data counter (for when_any) (unless data was overwritten)
-    cppext::detail::shared_state_base* notification_queue;
+    [[maybe_unused]] cppext::detail::shared_state_base* notification_queue;
     if(ret) {
       notification_queue = get_notification_queue();
     }

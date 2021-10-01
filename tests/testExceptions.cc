@@ -24,9 +24,9 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
 
   // push an exception into the queue
   try {
-    MyException e;
-    e.value = 42;
-    throw e;
+    MyException e1;
+    e1.value = 42;
+    throw e1;
   }
   catch(MyException&) {
     q.push_exception(std::current_exception());
@@ -37,9 +37,9 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
 
   // push a second exception into the queue
   try {
-    MyException e;
-    e.value = 43;
-    throw e;
+    MyException e2;
+    e2.value = 43;
+    throw e2;
   }
   catch(MyException&) {
     q.push_exception(std::current_exception());
@@ -47,9 +47,9 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
 
   // push a third exception into the queue
   try {
-    MyException e;
-    e.value = 44;
-    throw e;
+    MyException e3;
+    e3.value = 44;
+    throw e3;
   }
   catch(MyException&) {
     q.push_exception(std::current_exception());
@@ -65,8 +65,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     q.pop(v);
     BOOST_ERROR("Exception expected.");
   }
-  catch(MyException& e) {
-    BOOST_CHECK_EQUAL(e.value, 42);
+  catch(MyException& ep1) {
+    BOOST_CHECK_EQUAL(ep1.value, 42);
   }
 
   // pop the second value from the queue
@@ -78,8 +78,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     q.pop_wait(v);
     BOOST_ERROR("Exception expected.");
   }
-  catch(MyException& e) {
-    BOOST_CHECK_EQUAL(e.value, 43);
+  catch(MyException& ep2) {
+    BOOST_CHECK_EQUAL(ep2.value, 43);
   }
 
   // checkout third exception on queue without popping it
@@ -89,8 +89,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     v = q.front();
     BOOST_ERROR("Exception expected.");
   }
-  catch(MyException& e) {
-    BOOST_CHECK_EQUAL(e.value, 44);
+  catch(MyException& ef) {
+    BOOST_CHECK_EQUAL(ef.value, 44);
   }
 
   BOOST_CHECK(q.empty() == false);
@@ -100,8 +100,8 @@ BOOST_AUTO_TEST_CASE(testExceptions) {
     q.pop(v);
     BOOST_ERROR("Exception expected.");
   }
-  catch(MyException& e) {
-    BOOST_CHECK_EQUAL(e.value, 44);
+  catch(MyException& ep3) {
+    BOOST_CHECK_EQUAL(ep3.value, 44);
   }
 
   BOOST_CHECK(q.empty() == true);

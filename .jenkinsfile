@@ -1,2 +1,3 @@
 @Library('ChimeraTK') _
-buildTestDeploy([])
+env.MAILTO="martin.hierholzer@desy.de"
+buildTestDeploy([], 'https://github.com/ChimeraTK/cppext')

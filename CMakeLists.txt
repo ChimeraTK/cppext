@@ -28,16 +28,20 @@ include(cmake/enable_latest_cxx_support.cmake)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-enable_testing()
+option(BUILD_TESTS "Build test programs" ON)
+if(BUILD_TESTS)
+  enable_testing()
 
-aux_source_directory(${CMAKE_SOURCE_DIR}/tests testExecutables)
-foreach( testExecutableSrcFile ${testExecutables})
-  #NAME_WE means the base name without path and (longest) extension
-  get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
-  add_executable(${excutableName} ${testExecutableSrcFile})
-  target_link_libraries(${excutableName} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${GCCLIBATOMIC_LIBRARY})
-  add_test(${excutableName} ${excutableName})
-endforeach( testExecutableSrcFile )
+  aux_source_directory(${CMAKE_SOURCE_DIR}/tests testExecutables)
+  foreach( testExecutableSrcFile ${testExecutables})
+    #NAME_WE means the base name without path and (longest) extension
+    get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
+    add_executable(${excutableName} ${testExecutableSrcFile})
+    target_link_libraries(${excutableName} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${GCCLIBATOMIC_LIBRARY})
+    add_test(${excutableName} ${excutableName})
+  endforeach( testExecutableSrcFile )
+
+endif()
 
 # generate Doxygen documentation
 include(cmake/enable_doxygen_documentation.cmake)

@@ -293,12 +293,12 @@ namespace cppext {
 
     void pop_wait();
 
-    /** Obtain the front element of the queue without removing it. It is mandatory
-     * to make sure that data is available
-     * in the queue by calling empty() before calling this function. */
-    template<typename U = T,
-        typename std::enable_if<std::is_same<T, U>::value && !std::is_same<U, void>::value, int>::type = 0>
-    const U& front() const;
+    /** Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
+     *  in the queue by calling empty() before calling this function. 
+     *
+     *  Note: No const variant exists, since empty() already changes the state of the queue internally (to acquire
+     *  ownership on the front element, so push_overwrite() can no longer overwrite it). Without a const variant of
+        empty(), a const variant of front() would be unusable. */
     template<typename U = T,
         typename std::enable_if<std::is_same<T, U>::value && !std::is_same<U, void>::value, int>::type = 0>
     U& front();
@@ -1158,15 +1158,6 @@ namespace cppext {
 
   /*********************************************************************************************************************/
   /** Various implementations of front(). */
-
-  /** This front() is for non-void data types and a const *this */
-  template<typename T, typename FEATURES>
-  template<typename U, typename std::enable_if<std::is_same<T, U>::value && !std::is_same<U, void>::value, int>::type>
-  const U& future_queue<T, FEATURES>::front() const {
-    assert(d->hasFrontOwnership);
-    if(d->exceptions[d->readIndex % d->nBuffers]) std::rethrow_exception(d->exceptions[d->readIndex % d->nBuffers]);
-    future_queue_base::d.cast<T>()->buffers[d->readIndex % d->nBuffers];
-  }
 
   /** This front() is for non-void data types and a non-const *this */
   template<typename T, typename FEATURES>

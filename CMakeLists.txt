@@ -13,6 +13,12 @@ find_package(Boost COMPONENTS unit_test_framework system thread REQUIRED)
 find_package(Threads REQUIRED)
 find_package(GccAtomic REQUIRED)
 
+# libatomic does not exist on all systems (e.g. when using Clang / LLVM), so it
+# we ignore if it is missing.
+IF(NOT GCCLIBATOMIC_FOUND)
+  set(GCCLIBATOMIC_LIBRARY "")
+ENDIF()
+
 # Moderate version of the compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -Wextra -Wuninitialized")
 

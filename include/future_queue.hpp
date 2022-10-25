@@ -420,7 +420,7 @@ namespace cppext {
        * will point to the original queue of which *this is the continuation. */
       future_queue_base continuation_origin;
 
-      std::atomic<when_any_notification_info> when_any_notification;
+      std::atomic<when_any_notification_info> when_any_notification{when_any_notification_info()};
     };
 
     /** Internal class for holding the data which is shared between multiple

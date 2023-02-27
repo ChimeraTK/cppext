@@ -1,5 +1,5 @@
 project(ChimeraTK-cppext)
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.16)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
 
@@ -7,6 +7,11 @@ set(${PROJECT_NAME}_MAJOR_VERSION 01)
 set(${PROJECT_NAME}_MINOR_VERSION 04)
 set(${PROJECT_NAME}_PATCH_VERSION 02)
 include(cmake/set_version_numbers.cmake)
+
+# we support our cmake EXPORTS as imported targets
+set(PROVIDES_EXPORTED_TARGETS 1)
+# our lib is header-only
+add_library(${PROJECT_NAME} INTERFACE)
 
 # find BOOST libraries (needed for tests only)
 find_package(Boost COMPONENTS unit_test_framework system thread REQUIRED)
@@ -17,6 +22,8 @@ find_package(GccAtomic REQUIRED)
 # we ignore if it is missing.
 IF(NOT GCCLIBATOMIC_FOUND)
   set(GCCLIBATOMIC_LIBRARY "")
+else()
+  target_link_libraries(${PROJECT_NAME} INTERFACE ${GCCLIBATOMIC_LIBRARY})
 ENDIF()
 
 # Set default compiler flags and build types
@@ -24,8 +31,15 @@ include(cmake/set_default_flags.cmake)
 
 # add support for latest C++ standard to compiler flags
 include(cmake/enable_latest_cxx_support.cmake)
+# we need the options as array 
+include(cmake/format_options.cmake)
+formatOptionsAsArray(projectCxxFlags ${${PROJECT_NAME}_CXX_FLAGS})
+target_compile_options(${PROJECT_NAME} INTERFACE ${projectCxxFlags})
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME} INTERFACE 
+    "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>"
+    # relative to ${CMAKE_INSTALL_PREFIX} but don't explicitly mention it
+    "$<INSTALL_INTERFACE:include>")
 
 option(BUILD_TESTS "Build test programs" ON)
 if(BUILD_TESTS)
@@ -36,7 +50,7 @@ if(BUILD_TESTS)
     #NAME_WE means the base name without path and (longest) extension
     get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
     add_executable(${excutableName} ${testExecutableSrcFile})
-    target_link_libraries(${excutableName} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${GCCLIBATOMIC_LIBRARY})
+    target_link_libraries(${excutableName} PRIVATE ${PROJECT_NAME} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
     add_test(${excutableName} ${excutableName})
   endforeach( testExecutableSrcFile )
 
@@ -51,6 +65,9 @@ include(cmake/enable_code_coverage_report.cmake)
 # install header files
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION include/ChimeraTK/cppext
                                                   FILES_MATCHING PATTERN "*.hpp")
+
+# this only provides cmake export
+install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}Targets)
 
 # Create cmake configuration files for downstream projects
 set(${PROJECT_NAME}_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")

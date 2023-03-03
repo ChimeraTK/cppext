@@ -19,8 +19,8 @@ IF(NOT GCCLIBATOMIC_FOUND)
   set(GCCLIBATOMIC_LIBRARY "")
 ENDIF()
 
-# Moderate version of the compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -Wextra -Wuninitialized")
+# Set default compiler flags and build types
+include(cmake/set_default_flags.cmake)
 
 string(TOUPPER "${ENABLE_TSAN}" enable_tsanitizer_uppercase)
 IF(enable_tsanitizer_uppercase STREQUAL "TRUE")

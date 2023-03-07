@@ -450,7 +450,7 @@ namespace cppext {
     };
 
     inline void shared_state_base::free() {
-      // Reduce reference count but atomically keep the old reference counter.Note
+      // Reduce reference count but atomically keep the old reference counter. Note
       // that the std::memory_order_relaxed refers to the access to the pointer not
       // to the reference counter.
       size_t oldCount = this->reference_count--;

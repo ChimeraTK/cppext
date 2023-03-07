@@ -13,7 +13,7 @@ find_package(Boost COMPONENTS unit_test_framework system thread REQUIRED)
 find_package(Threads REQUIRED)
 find_package(GccAtomic REQUIRED)
 
-# libatomic does not exist on all systems (e.g. when using Clang / LLVM), so it
+# libatomic does not exist on all systems (e.g. when using Clang / LLVM), so
 # we ignore if it is missing.
 IF(NOT GCCLIBATOMIC_FOUND)
   set(GCCLIBATOMIC_LIBRARY "")
@@ -21,13 +21,6 @@ ENDIF()
 
 # Set default compiler flags and build types
 include(cmake/set_default_flags.cmake)
-
-string(TOUPPER "${ENABLE_TSAN}" enable_tsanitizer_uppercase)
-IF(enable_tsanitizer_uppercase STREQUAL "TRUE")
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O1 -fsanitize=thread  -fno-inline")
-ELSE()
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -fno-inline")
-ENDIF()
 
 # add support for latest C++ standard to compiler flags
 include(cmake/enable_latest_cxx_support.cmake)

@@ -347,7 +347,7 @@ namespace cppext {
     /** Internal base class for holding the data which is shared between multiple
      * instances of the same queue. The base class does not depend on the data type
      * and is used by future_queue_base.
-     * Dynamically created instances of this class must only created using new(), but
+     * Instances of this class must only be created dynamically using new() (don't allocate on the stack!), but
      * the creator must not call delete(), but rather shared_state_base's free() function, so as to
      * correctly decrement references of this class and objects pointed to.
      * The shared_state_base and pointers to it must no longer be used after calling free()

@@ -345,8 +345,13 @@ namespace cppext {
     };
 
     /** Internal base class for holding the data which is shared between multiple
-     * instances of the same queue. The base
-     *  class does not depend on the data type and is used by future_queue_base. */
+     * instances of the same queue. The base class does not depend on the data type
+     * and is used by future_queue_base.
+     * Instances of this class must only be created dynamically using new() (don't allocate on the stack!), but
+     * the creator must not call delete(), but rather shared_state_base's free() function, so as to
+     * correctly decrement references of this class and objects pointed to.
+     * The shared_state_base and pointers to it must no longer be used after calling free()
+     * since free() may call "delete this". */
     struct shared_state_base {
       shared_state_base(size_t length)
       : nBuffers(length + 1), semaphores(length + 1), exceptions(length + 1), writeIndex(0), readIndexMax(0),
@@ -355,6 +360,10 @@ namespace cppext {
       /** Destructor must be virtual so the destructor of the derived class gets
        * called. */
       virtual ~shared_state_base() {}
+
+      /** Decreaces the reference count and calls "delete this" where appropriate.
+       *  The share_state_base object and pointers to it must not be used after calling free(). */
+      inline void free();
 
       /** reference count. See shared_state_ptr for further documentation. */
       std::atomic<size_t> reference_count{0};
@@ -439,6 +448,78 @@ namespace cppext {
     struct shared_state<void> : shared_state_base {
       shared_state(size_t length) : shared_state_base(length) {}
     };
+
+    inline void shared_state_base::free() {
+      // Reduce reference count but atomically keep the old reference counter. Note
+      // that the std::memory_order_relaxed refers to the access to the pointer not
+      // to the reference counter.
+      size_t oldCount = this->reference_count--;
+
+      // Determine whether we need to destroy the shared state depending on possible
+      // internal references.
+      bool executeDelete = false;
+
+      // Standard case: no continuation. If the last user is just destroying its
+      // reference we delete the shared state.
+      if(oldCount == 1 && !this->is_continuation_async && !this->is_continuation_deferred &&
+          !this->is_continuation_when_all) {
+        executeDelete = true;
+      }
+      // Deferred continuations (incl. when_all) have two internal use counts due to
+      // the two std::functions, so we need to remove those functions first.
+      else if(oldCount == 3 && (this->is_continuation_deferred || this->is_continuation_when_all)) {
+        this->continuation_process_deferred = {};
+        this->continuation_process_deferred_wait = {};
+        executeDelete = true;
+      }
+      // Async continuations have one internal use count inside their thread, so we
+      // need to terminate the thread first.
+      else if(oldCount == 2 && this->is_continuation_async) {
+        if(this->continuation_process_async.joinable()) {
+          // Signal termination to internal thread and wait until thread has been
+          // terminated
+          while(this->continuation_process_async_terminated == false) {
+            // Push a detail::TerminateInternalThread exception into the queue which
+            // the internal thread is potentially waiting on.
+            try {
+              throw detail::TerminateInternalThread();
+            }
+            catch(...) {
+              // Special case: the origin queue is a continuation itself (deferred
+              // or when_all) - we need to push the exception to the origin of the
+              // origin to actually reach the internal thread, since
+              // deferred/when_all continuations do not really use their own queue
+              if(this->continuation_origin.d->is_continuation_deferred ||
+                  this->continuation_origin.d->is_continuation_when_all) {
+                this->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
+              }
+              // Standard case: just push the exception to the origin queue of the
+              // continuation
+              else {
+                this->continuation_origin.push_exception(std::current_exception());
+              }
+            } // end catch
+          }   // end while
+
+          this->continuation_process_async.join();
+        }
+        executeDelete = true;
+      }
+
+      if(executeDelete) {
+        // Now that all potential internal references have been cleared the
+        // reference count must be 0
+        assert(reference_count == 0);
+
+        // the when_any_notification notifyerQueue may have it's reference count
+        // manually incremented by setNotificationQueue, and must be freed if it exists.
+        if(when_any_notification.load().notifyerQueue) {
+          when_any_notification.load().notifyerQueue->free();
+        }
+        delete this;
+      } // end if executeDelete
+
+    } // end shared_state_base::free()
 
   } // namespace detail
 
@@ -613,71 +694,12 @@ namespace cppext {
     inline void shared_state_ptr::free() {
       // Don't do anything if called on a nullptr (i.e. default constructed or
       // already destroyed)
-      if(get() == nullptr) return;
-
-      // Reduce reference count but atomically keep the old reference counter. Note
-      // that the std::memory_order_relaxed refers to the access to the pointer not
-      // to the reference counter.
-      size_t oldCount = get()->reference_count--;
-
-      // Determine whether we need to destroy the shared state depending on possible
-      // internal references.
-      bool executeDelete = false;
-
-      // Standard case: no continuation. If the last user is just destroying its
-      // reference we delete the shared state.
-      if(oldCount == 1 && !get()->is_continuation_async && !get()->is_continuation_deferred &&
-          !get()->is_continuation_when_all) {
-        executeDelete = true;
-      }
-      // Deferred continuations (incl. when_all) have two internal use counts due to
-      // the two std::functions, so we need to remove those functions first.
-      else if(oldCount == 3 && (get()->is_continuation_deferred || get()->is_continuation_when_all)) {
-        get()->continuation_process_deferred = {};
-        get()->continuation_process_deferred_wait = {};
-        executeDelete = true;
-      }
-      // Async continuations have one internal use count inside their thread, so we
-      // need to terminate the thread first.
-      else if(oldCount == 2 && get()->is_continuation_async) {
-        if(get()->continuation_process_async.joinable()) {
-          // Signal termination to internal thread and wait until thread has been
-          // terminated
-          while(get()->continuation_process_async_terminated == false) {
-            // Push a detail::TerminateInternalThread exception into the queue which
-            // the internal thread is potentially waiting on.
-            try {
-              throw detail::TerminateInternalThread();
-            }
-            catch(...) {
-              // Special case: the origin queue is a continuation itself (deferred
-              // or when_all) - we need to push the exception to the origin of the
-              // origin to actually reach the internal thread, since
-              // deferred/when_all continuations do not really use their own queue
-              if(get()->continuation_origin.d->is_continuation_deferred ||
-                  get()->continuation_origin.d->is_continuation_when_all) {
-                get()->continuation_origin.d->continuation_origin.push_exception(std::current_exception());
-              }
-              // Standard case: just push the exception to the origin queue of the
-              // continuation
-              else {
-                get()->continuation_origin.push_exception(std::current_exception());
-              }
-            }
-          }
-          get()->continuation_process_async.join();
-        }
-        executeDelete = true;
+      if(get() == nullptr) {
+        return;
       }
 
-      // delete the shared_state?
-      if(executeDelete) {
-        // Now that all potential internal references have been cleared the
-        // reference count must be 0
-        assert(get()->reference_count == 0);
-        delete get();
-        set(nullptr);
-      }
+      get()->free();
+      set(nullptr);
     }
 
     template<typename T>

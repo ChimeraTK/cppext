@@ -345,8 +345,13 @@ namespace cppext {
     };
 
     /** Internal base class for holding the data which is shared between multiple
-     * instances of the same queue. The base
-     *  class does not depend on the data type and is used by future_queue_base. */
+     * instances of the same queue. The base class does not depend on the data type
+     * and is used by future_queue_base.
+     * Dynamically created instances of this class must only created using new(), but
+     * the creator must not call delete(), but rather shared_state_base's free() function, so as to
+     * correctly decrement references of this class and objects pointed to.
+     * The shared_state_base and pointers to it must no longer be used after calling free()
+     * since free() may call "delete this". */
     struct shared_state_base {
       shared_state_base(size_t length)
       : nBuffers(length + 1), semaphores(length + 1), exceptions(length + 1), writeIndex(0), readIndexMax(0),
@@ -356,7 +361,9 @@ namespace cppext {
        * called. */
       virtual ~shared_state_base() {}
 
-      inline void free(); // added during Feb 2023 Focus.
+      /** Decreaces the reference count and calls "delete this" where appropriate.
+       *  The share_state_base object and pointers to it must not be used after calling free(). */
+      inline void free();
 
       /** reference count. See shared_state_ptr for further documentation. */
       std::atomic<size_t> reference_count{0};
@@ -443,7 +450,7 @@ namespace cppext {
     };
 
     inline void shared_state_base::free() {
-      // Reduce reference count but atomically keep the old reference counter. Note
+      // Reduce reference count but atomically keep the old reference counter.Note
       // that the std::memory_order_relaxed refers to the access to the pointer not
       // to the reference counter.
       size_t oldCount = this->reference_count--;
@@ -496,15 +503,16 @@ namespace cppext {
 
           this->continuation_process_async.join();
         }
-        // end else branch 3.else
         executeDelete = true;
-      } // end branch 3
+      }
 
-      // delete the shared_state?
       if(executeDelete) {
         // Now that all potential internal references have been cleared the
         // reference count must be 0
         assert(reference_count == 0);
+
+        // the when_any_notification notifyerQueue may have it's reference count
+        // manually incremented by setNotificationQueue, and must be freed if it exists.
         if(when_any_notification.load().notifyerQueue) {
           when_any_notification.load().notifyerQueue->free();
         }

@@ -14,7 +14,7 @@ add_library(${PROJECT_NAME} INTERFACE)
 # find BOOST libraries (needed for tests only)
 find_package(Boost COMPONENTS unit_test_framework system thread REQUIRED)
 find_package(Threads REQUIRED)
-find_package(GccAtomic REQUIRED)
+find_package(GccAtomic)
 
 # libatomic does not exist on all systems (e.g. when using Clang / LLVM), so
 # we ignore if it is missing.

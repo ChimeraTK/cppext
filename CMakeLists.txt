@@ -8,8 +8,6 @@ set(${PROJECT_NAME}_MINOR_VERSION 04)
 set(${PROJECT_NAME}_PATCH_VERSION 02)
 include(cmake/set_version_numbers.cmake)
 
-# we support our cmake EXPORTS as imported targets
-set(PROVIDES_EXPORTED_TARGETS 1)
 # our lib is header-only
 add_library(${PROJECT_NAME} INTERFACE)
 
@@ -70,8 +68,8 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION include/ChimeraTK/cpp
 install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}Targets)
 
 # Create cmake configuration files for downstream projects
-set(${PROJECT_NAME}_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
-set(${PROJECT_NAME}_LIBRARIES "${GCCLIBATOMIC_LIBRARY}")
-set(${PROJECT_NAME}_LIBRARY_DIRS "")
-# already set: ${PROJECT_NAME}_CXX_FLAGS
+# we support our cmake EXPORTS as imported targets
+set(PROVIDES_EXPORTED_TARGETS 1)
+# we need the public dependencies so create_cmake_config_files can find them as implicit dependencies
+list(APPEND ${PROJECT_NAME}_PUBLIC_DEPENDENCIES "Boost COMPONENTS system thread;Threads;GccAtomic")
 include(${CMAKE_SOURCE_DIR}/cmake/create_cmake_config_files.cmake)

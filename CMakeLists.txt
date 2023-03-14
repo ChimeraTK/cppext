@@ -71,5 +71,7 @@ install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}Targets)
 # we support our cmake EXPORTS as imported targets
 set(PROVIDES_EXPORTED_TARGETS 1)
 # we need the public dependencies so create_cmake_config_files can find them as implicit dependencies
-list(APPEND ${PROJECT_NAME}_PUBLIC_DEPENDENCIES "Boost COMPONENTS system thread;Threads;GccAtomic")
+# Note, GccAtomic is not listed here since it doesn't provide imported target and resolved lib location 
+# is already in our public linker flags.
+list(APPEND ${PROJECT_NAME}_PUBLIC_DEPENDENCIES "Boost COMPONENTS system thread;Threads")
 include(${CMAKE_SOURCE_DIR}/cmake/create_cmake_config_files.cmake)

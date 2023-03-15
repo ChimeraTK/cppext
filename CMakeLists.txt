@@ -18,10 +18,8 @@ find_package(GccAtomic)
 
 # libatomic does not exist on all systems (e.g. when using Clang / LLVM), so
 # we ignore if it is missing.
-IF(NOT GCCLIBATOMIC_FOUND)
-  set(GCCLIBATOMIC_LIBRARY "")
-else()
-  target_link_libraries(${PROJECT_NAME} INTERFACE ${GCCLIBATOMIC_LIBRARY})
+IF(GccAtomic_FOUND)
+  target_link_libraries(${PROJECT_NAME} INTERFACE ${GccAtomic_LIBRARY})
 ENDIF()
 
 # Set default compiler flags and build types

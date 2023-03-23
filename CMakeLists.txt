@@ -63,7 +63,9 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION include/ChimeraTK/cpp
                                                   FILES_MATCHING PATTERN "*.hpp")
 
 # this only provides cmake export
-install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}Targets)
+include(GNUInstallDirs)
+install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}Targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Create cmake configuration files for downstream projects
 # we support our cmake EXPORTS as imported targets

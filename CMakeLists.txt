@@ -46,7 +46,7 @@ if(BUILD_TESTS)
     #NAME_WE means the base name without path and (longest) extension
     get_filename_component(excutableName ${testExecutableSrcFile} NAME_WE)
     add_executable(${excutableName} ${testExecutableSrcFile})
-    target_link_libraries(${excutableName} PRIVATE ${PROJECT_NAME} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries(${excutableName} PRIVATE ${PROJECT_NAME} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY} Threads::Threads)
     add_test(${excutableName} ${excutableName})
   endforeach( testExecutableSrcFile )
 

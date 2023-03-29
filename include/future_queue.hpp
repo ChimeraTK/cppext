@@ -369,7 +369,7 @@ namespace cppext {
       std::atomic<size_t> reference_count{0};
 
       /** index used in wait_any to identify the queue */
-      size_t when_any_index;
+      std::atomic<size_t> when_any_index;
 
       /** the number of buffers we have allocated */
       size_t nBuffers;

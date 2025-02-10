@@ -1,12 +1,13 @@
-#ifndef FUTURE_QUEUE_HPP
-#define FUTURE_QUEUE_HPP
+// SPDX-FileCopyrightText: Deutsches Elektronen-Synchrotron DESY, MSK, ChimeraTK Project <chimeratk-support@desy.de>
+// SPDX-License-Identifier: LGPL-3.0-or-later
+#pragma once
+
+#include "semaphore.hpp"
 
 #include <atomic>
 #include <cassert>
 #include <future> // just for std::launch
 #include <vector>
-
-#include "semaphore.hpp"
 
 namespace cppext {
 
@@ -294,7 +295,7 @@ namespace cppext {
     void pop_wait();
 
     /** Obtain the front element of the queue without removing it. It is mandatory to make sure that data is available
-     *  in the queue by calling empty() before calling this function. 
+     *  in the queue by calling empty() before calling this function.
      *
      *  Note: No const variant exists, since empty() already changes the state of the queue internally (to acquire
      *  ownership on the front element, so push_overwrite() can no longer overwrite it). Without a const variant of
@@ -499,7 +500,7 @@ namespace cppext {
                 this->continuation_origin.push_exception(std::current_exception());
               }
             } // end catch
-          }   // end while
+          } // end while
 
           this->continuation_process_async.join();
         }
@@ -685,11 +686,17 @@ namespace cppext {
       return *this;
     }
 
-    inline shared_state_ptr::~shared_state_ptr() { free(); }
+    inline shared_state_ptr::~shared_state_ptr() {
+      free();
+    }
 
-    inline shared_state_base* shared_state_ptr::get() const { return ptr; }
+    inline shared_state_base* shared_state_ptr::get() const {
+      return ptr;
+    }
 
-    inline void shared_state_ptr::set(shared_state_base* ptr_) { ptr = ptr_; }
+    inline void shared_state_ptr::set(shared_state_base* ptr_) {
+      ptr = ptr_;
+    }
 
     inline void shared_state_ptr::free() {
       // Don't do anything if called on a nullptr (i.e. default constructed or
@@ -725,9 +732,13 @@ namespace cppext {
       return static_cast<shared_state<T>*>(get());
     }
 
-    inline shared_state_ptr::operator bool() const { return get() != nullptr; }
+    inline shared_state_ptr::operator bool() const {
+      return get() != nullptr;
+    }
 
-    inline bool shared_state_ptr::operator==(const shared_state_ptr& other) const { return get() == other.get(); }
+    inline bool shared_state_ptr::operator==(const shared_state_ptr& other) const {
+      return get() == other.get();
+    }
 
   } // namespace detail
 
@@ -885,9 +896,13 @@ namespace cppext {
     }
   }
 
-  inline bool future_queue_base::operator==(const future_queue_base& other) const { return d == other.d; }
+  inline bool future_queue_base::operator==(const future_queue_base& other) const {
+    return d == other.d;
+  }
 
-  inline bool future_queue_base::operator!=(const future_queue_base& other) const { return !(d == other.d); }
+  inline bool future_queue_base::operator!=(const future_queue_base& other) const {
+    return !(d == other.d);
+  }
 
   inline future_queue_base::future_queue_base(const detail::shared_state_ptr& d_ptr_) : d(d_ptr_) {}
 
@@ -1597,5 +1612,3 @@ namespace cppext {
   }
 
 } // namespace cppext
-
-#endif // FUTURE_QUEUE_HPP

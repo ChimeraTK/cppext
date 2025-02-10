@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Deutsches Elektronen-Synchrotron DESY, MSK, ChimeraTK Project <chimeratk-support@desy.de>
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /**********************************************************************************************************************
  *
  * VERY IMPORTANT NOTE!
@@ -8,6 +10,7 @@
  *********************************************************************************************************************/
 
 #include <future_queue.hpp>
+
 #include <iostream>
 #include <thread>
 #include <unistd.h>

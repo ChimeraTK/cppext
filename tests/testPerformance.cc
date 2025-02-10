@@ -1,23 +1,25 @@
+// SPDX-FileCopyrightText: Deutsches Elektronen-Synchrotron DESY, MSK, ChimeraTK Project <chimeratk-support@desy.de>
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #define BOOST_TEST_MODULE test_future_queue
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
-#include <iterator>
-#include <thread>
-
-#include <boost/next_prior.hpp>
-#include <boost/lockfree/queue.hpp>
-#include <boost/lockfree/spsc_queue.hpp>
-#include <boost/thread/future.hpp>
-
 #include "barrier.hpp"
 #include "future_queue.hpp"
+
+#include <boost/lockfree/queue.hpp>
+#include <boost/lockfree/spsc_queue.hpp>
+#include <boost/next_prior.hpp>
+#include <boost/thread/future.hpp>
+
+#include <iterator>
+#include <thread>
 
 constexpr size_t queueLength = 1000;
 constexpr size_t nTransfers = 1e6;
 constexpr size_t nQueues = 10; // only for when_any & related
-//#define ENABLE_BOOST_LOCKFREE_QUEUE_PERFORMANCE_MEASUREMENT     // just for
-// comparison
+// #define ENABLE_BOOST_LOCKFREE_QUEUE_PERFORMANCE_MEASUREMENT     // just for
+//  comparison
 
 /*********************************************************************************************************************/
 

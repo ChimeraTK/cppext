@@ -1,12 +1,14 @@
-#ifndef FUTURE_QUEUE_SEMAPHORE_HPP
-#define FUTURE_QUEUE_SEMAPHORE_HPP
+// SPDX-FileCopyrightText: Deutsches Elektronen-Synchrotron DESY, MSK, ChimeraTK Project <chimeratk-support@desy.de>
+// SPDX-License-Identifier: LGPL-3.0-or-later
+#pragma once
 
 #ifdef __linux__
 #  include <features.h>
 #endif
 
-#include <cassert>
 #include <system_error>
+
+#include <cassert>
 
 /*
  * Two implementations: one is based on the posix semaphore (sem_wait etc.), the
@@ -93,6 +95,7 @@ namespace cppext {
  *********************************************************************************************************************/
 
 #  include <condition_variable>
+
 #  include <mutex>
 
 namespace cppext {
@@ -142,5 +145,3 @@ namespace cppext {
 } // namespace cppext
 
 #endif // POSIX feature switch
-
-#endif // FUTURE_QUEUE_SEMAPHORE_HPP

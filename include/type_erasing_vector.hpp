@@ -1,5 +1,6 @@
-#ifndef TYPE_ERASING_VECTOR_HPP
-#define TYPE_ERASING_VECTOR_HPP
+// SPDX-FileCopyrightText: Deutsches Elektronen-Synchrotron DESY, MSK, ChimeraTK Project <chimeratk-support@desy.de>
+// SPDX-License-Identifier: LGPL-3.0-or-later
+#pragma once
 
 #include <functional>
 #include <vector>
@@ -56,5 +57,3 @@ namespace cppext { namespace experimental {
   };
 
 }} // namespace cppext::experimental
-
-#endif // TYPE_ERASING_VECTOR_HPP

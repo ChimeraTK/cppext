@@ -1,11 +1,13 @@
+// SPDX-FileCopyrightText: Deutsches Elektronen-Synchrotron DESY, MSK, ChimeraTK Project <chimeratk-support@desy.de>
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #define BOOST_TEST_MODULE test_future_queue
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test_framework;
 
 #include "future_queue.hpp"
-#include <thread>
-
 #include "threadsafe_unit_test.hpp"
+
+#include <thread>
 
 BOOST_AUTO_TEST_SUITE(testExceptions)
 

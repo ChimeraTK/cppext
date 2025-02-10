@@ -25,12 +25,8 @@ ENDIF()
 # Set default compiler flags and build types
 include(cmake/set_default_flags.cmake)
 
-# add support for latest C++ standard to compiler flags
-include(cmake/enable_latest_cxx_support.cmake)
-# we need the options as array 
-include(cmake/format_options.cmake)
-formatOptionsAsArray(projectCxxFlags ${${PROJECT_NAME}_CXX_FLAGS})
-target_compile_options(${PROJECT_NAME} INTERFACE ${projectCxxFlags})
+# Require C++23 standard. This will be propagated to all targets that link against this library.
+target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_23)
 
 target_include_directories(${PROJECT_NAME} INTERFACE 
     "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>"

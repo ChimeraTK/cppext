@@ -10,10 +10,10 @@
  *********************************************************************************************************************/
 
 #include <future_queue.hpp>
+#include <unistd.h>
 
 #include <iostream>
 #include <thread>
-#include <unistd.h>
 
 // define future_queue of doubles with a length of 5
 static cppext::future_queue<double> myQueue(5);

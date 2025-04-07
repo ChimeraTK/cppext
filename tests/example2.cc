@@ -10,10 +10,10 @@
  *********************************************************************************************************************/
 
 #include <future_queue.hpp>
+#include <unistd.h>
 
 #include <iostream>
 #include <thread>
-#include <unistd.h>
 
 // define 3 future_queue of int with a length of 5
 static cppext::future_queue<int> inputQueue1(5);

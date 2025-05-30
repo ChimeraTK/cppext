@@ -11,7 +11,7 @@ using namespace boost::unit_test_framework;
 
 BOOST_AUTO_TEST_SUITE(testStresstestultiproducer)
 
-/*********************************************************************************************************************/
+/**********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(stresstestMultiproducer) {
   constexpr size_t runForSeconds = 10;
@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducer) {
   std::cout << "All senders are terminated." << std::endl;
 }
 
-/*********************************************************************************************************************/
+/**********************************************************************************************************************/
 
 BOOST_AUTO_TEST_CASE(stresstestMultiproducerOverwrite) {
   constexpr size_t runForSeconds = 10;
@@ -152,6 +152,6 @@ BOOST_AUTO_TEST_CASE(stresstestMultiproducerOverwrite) {
   std::cout << "All senders are terminated." << std::endl;
 }
 
-/*********************************************************************************************************************/
+/**********************************************************************************************************************/
 
 BOOST_AUTO_TEST_SUITE_END()

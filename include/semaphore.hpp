@@ -6,9 +6,8 @@
 #  include <features.h>
 #endif
 
-#include <system_error>
-
 #include <cassert>
+#include <system_error>
 
 /*
  * Two implementations: one is based on the posix semaphore (sem_wait etc.), the
@@ -95,7 +94,6 @@ namespace cppext {
  *********************************************************************************************************************/
 
 #  include <condition_variable>
-
 #  include <mutex>
 
 namespace cppext {

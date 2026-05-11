@@ -857,6 +857,9 @@ namespace cppext {
     if(ret) {
       notification_queue = get_notification_queue();
     }
+    else {
+      notification_queue = nullptr;
+    }
 
     // obtain notification queue or increment previous data counter (for when_any)
     assert(!d->semaphores[myIndex % d->nBuffers].is_ready());
